@@ -1,0 +1,46 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}<title>Мониторинг акций</title>{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="fas fa-eye"></i> Мониторинг акций</h1>
+    <a href="{% url 'dashboard:watchlist-create' %}" class="btn btn-primary">
+        <i class="fas fa-plus"></i> Новый список
+    </a>
+</div>
+
+{% if watchlists %}
+<div class="row">
+    {% for watchlist in watchlists %}
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">{{ watchlist.name }}</h5>
+                <p class="card-text text-muted">
+                    <i class="fas fa-list"></i> {{ watchlist.get_item_count }} акций
+                    <br><small class="text-muted">Создан: {{ watchlist.created_at|date:"d.m.Y" }}</small>
+                </p>
+                <div class="d-flex gap-2">
+                    <a href="{% url 'dashboard:watchlist-detail' pk=watchlist.pk %}" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-eye"></i> Открыть
+                    </a>
+                    <form method="post" action="{% url 'dashboard:watchlist-delete' pk=watchlist.pk %}" style="display:inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить список?')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle"></i> У вас пока нет списков наблюдения.
+    <a href="{% url 'dashboard:watchlist-create' %}">Создайте первый список</a>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,175 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}<title>{{ portfolio.name }} — Портфель</title>{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="fas fa-wallet"></i> {{ portfolio.name }}</h1>
+    <a href="{% url 'dashboard:portfolio-list' %}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Назад
+    </a>
+</div>
+
+<!-- Summary cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card metric-card">
+            <div class="card-body">
+                <h6 class="text-muted">Рыночная стоимость</h6>
+                <h3>{{ summary.total_market_value|floatformat:2 }} ₽</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card metric-card">
+            <div class="card-body">
+                <h6 class="text-muted">Стоимость покупки</h6>
+                <h3>{{ summary.total_cost_basis|floatformat:2 }} ₽</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card metric-card {% if summary.total_unrealized_pnl >= 0 %}profit{% else %}loss{% endif %}">
+            <div class="card-body">
+                <h6 class="text-muted">Нереализ. P&L</h6>
+                <h3>{{ summary.total_unrealized_pnl|floatformat:2 }} ₽</h3>
+                <small>{{ summary.total_unrealized_pnl_pct|floatformat:2 }}%</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card metric-card">
+            <div class="card-body">
+                <h6 class="text-muted">Акций в портфеле</h6>
+                <h3>{{ summary.holdings_count }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Holdings table -->
+{% if summary.holdings %}
+<div class="card mb-4">
+    <div class="card-header"><i class="fas fa-chart-pie"></i> Структура портфеля</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Тикер</th>
+                        <th>Название</th>
+                        <th>Кол-во</th>
+                        <th>Ср. цена</th>
+                        <th>Текущая</th>
+                        <th>Стоимость</th>
+                        <th>P&L</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for h in summary.holdings %}
+                    <tr>
+                        <td><a href="{% url 'dashboard:detail' pk=h.share_id %}">{{ h.ticker }}</a></td>
+                        <td>{{ h.name }}</td>
+                        <td>{{ h.quantity }}</td>
+                        <td>{{ h.average_price|floatformat:2 }}</td>
+                        <td>{{ h.current_price|default:"-"|floatformat:2 }}</td>
+                        <td>{{ h.market_value|floatformat:2 }}</td>
+                        <td class="{% if h.unrealized_pnl >= 0 %}profit{% else %}loss{% endif %}">
+                            {{ h.unrealized_pnl|floatformat:2 }} ({{ h.unrealized_pnl_pct|floatformat:2 }}%)
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-info mb-4">
+    <i class="fas fa-info-circle"></i> Портфель пуст. Добавьте первую сделку.
+</div>
+{% endif %}
+
+<!-- Add transaction form -->
+<div class="card mb-4">
+    <div class="card-header"><i class="fas fa-exchange-alt"></i> Добавить сделку</div>
+    <div class="card-body">
+        <form method="post" action="{% url 'dashboard:portfolio-add-transaction' pk=portfolio.pk %}" class="row g-2">
+            {% csrf_token %}
+            <div class="col-md-2">
+                <select name="transaction_type" class="form-select" required>
+                    <option value="BUY">Покупка</option>
+                    <option value="SELL">Продажа</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="share_id" class="form-select" required>
+                    <option value="">Акция...</option>
+                    {% for share in shares %}
+                    <option value="{{ share.id }}">{{ share.ticker }} - {{ share.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <input type="number" name="quantity" class="form-control" placeholder="Кол-во" min="1" required>
+            </div>
+            <div class="col-md-2">
+                <input type="number" step="0.01" name="price" class="form-control" placeholder="Цена" required>
+            </div>
+            <div class="col-md-2">
+                <input type="number" step="0.01" name="commission" class="form-control" placeholder="Комиссия" value="0">
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-success w-100">
+                    <i class="fas fa-plus"></i> Добавить
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Transaction history -->
+<div class="card">
+    <div class="card-header"><i class="fas fa-history"></i> История сделок</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Дата</th>
+                        <th>Тип</th>
+                        <th>Акция</th>
+                        <th>Кол-во</th>
+                        <th>Цена</th>
+                        <th>Комиссия</th>
+                        <th>Сумма</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tx in transactions %}
+                    <tr>
+                        <td>{{ tx.date|date:"d.m.Y H:i" }}</td>
+                        <td>
+                            {% if tx.type_code == "BUY" %}
+                                <span class="badge bg-success">Покупка</span>
+                            {% else %}
+                                <span class="badge bg-danger">Продажа</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ tx.share_ticker }} - {{ tx.share_name }}</td>
+                        <td>{{ tx.quantity }}</td>
+                        <td>{{ tx.price|floatformat:2 }}</td>
+                        <td>{{ tx.commission|floatformat:2 }}</td>
+                        <td><strong>{{ tx.total_amount|floatformat:2 }}</strong></td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted">Сделок пока нет</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

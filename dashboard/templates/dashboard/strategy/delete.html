@@ -1,0 +1,24 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}<title>Удалить стратегию</title>{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card border-danger">
+            <div class="card-header bg-danger text-white"><i class="fas fa-exclamation-triangle"></i> Подтверждение удаления</div>
+            <div class="card-body">
+                <p class="lead">Вы уверены, что хотите удалить стратегию <strong>"{{ object.name }}"</strong>?</p>
+                <p class="text-muted">Все правила и история сделок будут удалены.</p>
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-danger"><i class="fas fa-trash"></i> Удалить</button>
+                        <a href="{% url 'dashboard:strategy-list' %}" class="btn btn-secondary">Отмена</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

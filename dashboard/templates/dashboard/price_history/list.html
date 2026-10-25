@@ -1,0 +1,40 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}<title>История цен</title>{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="fas fa-chart-area"></i> История цен</h1>
+</div>
+
+{% if shares %}
+<div class="row">
+    {% for share in shares %}
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">{{ share.ticker }}</h5>
+                <p class="card-text">{{ share.name }}</p>
+                <p class="card-text">
+                    <strong>Цена:</strong> {{ share.last_price|default:"-" }} {{ share.currency }}
+                    <br>
+                    {% if share.is_trend_high == True %}
+                        <span class="badge bg-success">Растёт</span>
+                    {% elif share.is_trend_high == False %}
+                        <span class="badge bg-danger">Падает</span>
+                    {% endif %}
+                </p>
+                <a href="{% url 'dashboard:price-history-detail' pk=share.pk %}" class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-chart-line"></i> Графики
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle"></i> Список акций пуст. Загрузите данные через команду <code>python manage.py add_shares</code>
+</div>
+{% endif %}
+{% endblock %}

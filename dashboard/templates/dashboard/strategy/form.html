@@ -1,0 +1,30 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}<title>Новая стратегия</title>{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><i class="fas fa-robot"></i> Создать стратегию</div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="id_name" class="form-label">Название стратегии</label>
+                        <input type="text" name="name" id="id_name" class="form-control" required placeholder="Например: Копирование тренда">
+                    </div>
+                    <div class="mb-3">
+                        <label for="id_description" class="form-label">Описание</label>
+                        <textarea name="description" id="id_description" class="form-control" rows="3" placeholder="Опишите логику стратегии..."></textarea>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Создать</button>
+                        <a href="{% url 'dashboard:strategy-list' %}" class="btn btn-secondary">Отмена</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

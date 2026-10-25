@@ -1,70 +1,109 @@
 <!DOCTYPE html>
-<html lang="en" class="h-100">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
-
-    {% block title %}
-    {% endblock %}
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% block title %}<title>Investing</title>{% endblock %}
 
     {% load static %}
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-    <link href="{% static 'dashboard/css/bootstrap.min.css'%}" rel="stylesheet">
-    <link href="{% static 'dashboard/css/sticky-footer-navbar.css'%}" rel="stylesheet">
-    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.6/umd/popper.min.js" integrity="sha384-wHAiFfRlMFy6i5SRaxvfOCifBUQy1xHdJ/yoi7FRNXMRBu5WHdZYu1hA6ZOblgut" crossorigin="anonymous"></script>
-
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Font Awesome -->
-    <link href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet" integrity="sha384-wvfXpqpZZVQGK6TAh5PVlGOfQNHSoD2xbE+QkPxCAFlNEevoEH3Sl0sibVcOQVnN" crossorigin="anonymous">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- Plotly -->
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 
-    <!-- Moment.js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.23.0/moment.min.js" integrity="sha256-VBLiveTKyUZMEzJd6z2mhfxIqz3ZATCuVMawPZGzIfA=" crossorigin="anonymous"></script>
+    <style>
+        body { background-color: #f8f9fa; }
+        .nav-link { font-weight: 500; }
+        .nav-link.active { color: #0d6efd !important; }
+        .profit { color: #198754; }
+        .loss { color: #dc3545; }
+        .card { box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075); border: none; }
+        .metric-card { border-left: 4px solid #0d6efd; }
+        .metric-card.profit { border-left-color: #198754; }
+        .metric-card.loss { border-left-color: #dc3545; }
+    </style>
 
-    <!-- Tempus Dominus Bootstrap 4 -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tempusdominus-bootstrap-4/5.1.2/css/tempusdominus-bootstrap-4.min.css" integrity="sha256-XPTBwC3SBoWHSmKasAk01c08M6sIA5gF5+sRxqak2Qs=" crossorigin="anonymous" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tempusdominus-bootstrap-4/5.1.2/js/tempusdominus-bootstrap-4.min.js" integrity="sha256-z0oKYg6xiLq3yJGsp/LsY9XykbweQlHl42jHv2XTBz4=" crossorigin="anonymous"></script>
-
-
+    {% block extra_css %}{% endblock %}
 </head>
-<body class="d-flex flex-column h-100">
+<body class="d-flex flex-column min-vh-100">
 
-<div class="container">
-    <header class="d-flex flex-wrap align-items-center justify-content-center justify-content-md-between py-3 mb-4 border-bottom">
-        <ul class="nav col-12 col-md-auto mb-2 justify-content-center mb-md-0">
-            <li><a href="{% url 'dashboard:index' %}" class="nav-link px-2 link-secondary">Главная</a></li>
-        </ul>
-
-        <div class="col-md-3 text-end">
-            {% if user.is_authenticated %}
-                <p>Привет, {{ user.email }}
-                <a href="{% url 'user:logout' %}" class="btn btn-primary">Выход</a>
-                </p>
-            {% else %}
-                <a href="{% url 'user:auth' %}" class="btn btn-primary">Войти</a>
-            {% endif %}
-
-        </div>
-    </header>
-</div>
-
-<main class="flex-shrink-0">
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
     <div class="container">
+        <a class="navbar-brand" href="{% url 'dashboard:index' %}"><i class="fas fa-chart-line"></i> Investing</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav me-auto">
+                <li class="nav-item">
+                    <a class="nav-link {% if request.resolver_match.url_name == 'index' %}active{% endif %}" href="{% url 'dashboard:index' %}">
+                        <i class="fas fa-list"></i> Акции
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if 'watchlist' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'dashboard:watchlist-list' %}">
+                        <i class="fas fa-eye"></i> Мониторинг
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if 'portfolio' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'dashboard:portfolio-list' %}">
+                        <i class="fas fa-wallet"></i> Портфель
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if 'price-history' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'dashboard:price-history-list' %}">
+                        <i class="fas fa-chart-area"></i> История цен
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if 'strategy' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'dashboard:strategy-list' %}">
+                        <i class="fas fa-robot"></i> Стратегии
+                    </a>
+                </li>
+            </ul>
+            <ul class="navbar-nav">
+                {% if user.is_authenticated %}
+                    <li class="nav-item">
+                        <span class="nav-link text-white">Привет, {{ user.email }}</span>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'user:logout' %}"><i class="fas fa-sign-out-alt"></i> Выход</a>
+                    </a>
+                {% else %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'user:auth' %}"><i class="fas fa-sign-in-alt"></i> Войти</a>
+                    </li>
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+</nav>
 
-        {% block content %}
-        {% endblock %}
+<main class="flex-grow-1 py-4">
+    <div class="container">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
 
-
+        {% block content %}{% endblock %}
     </div>
 </main>
 
-<footer class="footer mt-auto py-3 bg-light">
-    <div class="container">
-        <ul class="nav justify-content-center border-bottom pb-3 mb-3">
-            <li class="nav-item"><a href="{% url 'dashboard:index' %}" class="nav-link px-2 text-muted">Главная</a></li>
-        </ul>
-        <p class="text-center text-muted">Investing</p>
+<footer class="bg-light py-3 mt-auto">
+    <div class="container text-center text-muted">
+        <small>Investing Demo &copy; 2024</small>
     </div>
 </footer>
 
-
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+{% block extra_js %}{% endblock %}
 </body>
 </html>

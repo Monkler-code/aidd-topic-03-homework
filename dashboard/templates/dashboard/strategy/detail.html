@@ -1,0 +1,184 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}<title>{{ strategy.name }} — Стратегия</title>{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="fas fa-robot"></i> {{ strategy.name }}</h1>
+    <a href="{% url 'dashboard:strategy-list' %}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Назад
+    </a>
+</div>
+
+<!-- Add rule form -->
+<div class="card mb-4">
+    <div class="card-header"><i class="fas fa-plus-circle"></i> Добавить правило</div>
+    <div class="card-body">
+        <form method="post" action="{% url 'dashboard:strategy-add-rule' pk=strategy.pk %}" class="row g-2">
+            {% csrf_token %}
+            <div class="col-md-2">
+                <select name="condition_field" class="form-select" required>
+                    <option value="close">Цена закрытия</option>
+                    <option value="high">Максимум</option>
+                    <option value="low">Минимум</option>
+                    <option value="change_pct">Изменение %</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="condition_operator" class="form-select" required>
+                    <option value="gt">Больше (>)</option>
+                    <option value="lt">Меньше (<)</option>
+                    <option value="gte">Больше или равно (>=)</option>
+                    <option value="lte">Меньше или равно (<=)</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <input type="number" step="0.01" name="condition_value" class="form-control" placeholder="Значение" required>
+            </div>
+            <div class="col-md-2">
+                <select name="action" class="form-select" required>
+                    <option value="BUY">Покупка</option>
+                    <option value="SELL">Продажа</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <input type="number" name="priority" class="form-control" placeholder="Приоритет" value="0">
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-success w-100">
+                    <i class="fas fa-plus"></i> Добавить
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Rules list -->
+{% if rules %}
+<div class="card mb-4">
+    <div class="card-header"><i class="fas fa-list"></i> Правила стратегии ({{ rules.count }})</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Приоритет</th>
+                        <th>Условие</th>
+                        <th>Действие</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for rule in rules %}
+                    <tr>
+                        <td>{{ rule.priority }}</td>
+                        <td>
+                            {% if rule.condition_field == "close" %}Цена закрытия
+                            {% elif rule.condition_field == "high" %}Максимум
+                            {% elif rule.condition_field == "low" %}Минимум
+                            {% elif rule.condition_field == "change_pct" %}Изменение %
+                            {% endif %}
+                            {% if rule.condition_operator == "gt" %} >
+                            {% elif rule.condition_operator == "lt" %} <
+                            {% elif rule.condition_operator == "gte" %} >=
+                            {% elif rule.condition_operator == "lte" %} <=
+                            {% endif %}
+                            <strong>{{ rule.condition_value }}</strong>
+                        </td>
+                        <td>
+                            {% if rule.action == "BUY" %}
+                                <span class="badge bg-success">Покупка</span>
+                            {% else %}
+                                <span class="badge bg-danger">Продажа</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-info mb-4">
+    <i class="fas fa-info-circle"></i> Стратегия не имеет правил. Добавьте хотя бы одно правило.
+</div>
+{% endif %}
+
+<!-- Backtest form -->
+<div class="card mb-4">
+    <div class="card-header"><i class="fas fa-play-circle"></i> Запустить бэктестинг</div>
+    <div class="card-body">
+        <form method="post" action="{% url 'dashboard:strategy-backtest' pk=strategy.pk %}" class="row g-2">
+            {% csrf_token %}
+            <div class="col-md-4">
+                <select name="share_id" class="form-select" required>
+                    <option value="">Выберите акцию...</option>
+                    {% for share in shares %}
+                    <option value="{{ share.id }}">{{ share.ticker }} - {{ share.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select name="days" class="form-select">
+                    <option value="30">30 дней</option>
+                    <option value="90" selected>90 дней</option>
+                    <option value="180">180 дней</option>
+                    <option value="365">1 год</option>
+                    <option value="730">2 года</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-warning w-100">
+                    <i class="fas fa-play"></i> Запустить симуляцию
+                </button>
+            </div>
+            <div class="col-md-2">
+                <a href="{% url 'dashboard:strategy-detail' pk=strategy.pk %}" class="btn btn-outline-secondary w-100">
+                    <i class="fas fa-history"></i> История
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Recent trades -->
+{% if trades %}
+<div class="card">
+    <div class="card-header"><i class="fas fa-exchange-alt"></i> Последние сделки ({{ trades.count }})</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Дата</th>
+                        <th>Акция</th>
+                        <th>Действие</th>
+                        <th>Кол-во</th>
+                        <th>Цена</th>
+                        <th>P&L</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for trade in trades|slice:":20" %}
+                    <tr>
+                        <td>{{ trade.date|date:"d.m.Y" }}</td>
+                        <td>{{ trade.share_ticker }}</td>
+                        <td>
+                            {% if trade.action == "BUY" %}
+                                <span class="badge bg-success">Покупка</span>
+                            {% else %}
+                                <span class="badge bg-danger">Продажа</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ trade.quantity }}</td>
+                        <td>{{ trade.price|floatformat:2 }}</td>
+                        <td>{{ trade.profit_loss|floatformat:2 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

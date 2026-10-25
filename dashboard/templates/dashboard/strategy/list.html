@@ -1,0 +1,63 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}<title>Симулятор стратегий</title>{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="fas fa-robot"></i> Симулятор стратегий</h1>
+    <a href="{% url 'dashboard:strategy-create' %}" class="btn btn-primary">
+        <i class="fas fa-plus"></i> Новая стратегия
+    </a>
+</div>
+
+{% if strategies %}
+<div class="row">
+    {% for strategy in strategies %}
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start">
+                    <h5 class="card-title">
+                        {% if strategy.is_active %}
+                            <span class="badge bg-success">Активна</span>
+                        {% else %}
+                            <span class="badge bg-secondary">Неактивна</span>
+                        {% endif %}
+                        {{ strategy.name }}
+                    </h5>
+                </div>
+                {% if strategy.description %}
+                <p class="card-text text-muted">{{ strategy.description|truncatewords:20 }}</p>
+                {% endif %}
+                <p class="card-text">
+                    <small>
+                        <i class="fas fa-cog"></i> {{ strategy.rules.count }} правил
+                        <br>
+                        <i class="fas fa-exchange-alt"></i> {{ strategy.trades.count }} сделок
+                        <br>
+                        <small class="text-muted">Создана: {{ strategy.created_at|date:"d.m.Y" }}</small>
+                    </small>
+                </p>
+                <div class="d-flex gap-2">
+                    <a href="{% url 'dashboard:strategy-detail' pk=strategy.pk %}" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-cog"></i> Настроить
+                    </a>
+                    <form method="post" action="{% url 'dashboard:strategy-delete' pk=strategy.pk %}" style="display:inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить стратегию?')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle"></i> У вас пока нет стратегий.
+    <a href="{% url 'dashboard:strategy-create' %}">Создайте первую стратегию</a>
+</div>
+{% endif %}
+{% endblock %}

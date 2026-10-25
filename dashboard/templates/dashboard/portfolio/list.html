@@ -1,0 +1,45 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}<title>Инвестиционный портфель</title>{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="fas fa-wallet"></i> Инвестиционный портфель</h1>
+    <a href="{% url 'dashboard:portfolio-create' %}" class="btn btn-primary">
+        <i class="fas fa-plus"></i> Новый портфель
+    </a>
+</div>
+
+{% if portfolios %}
+<div class="row">
+    {% for portfolio in portfolios %}
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">{{ portfolio.name }}</h5>
+                <p class="card-text text-muted">
+                    <i class="fas fa-calendar"></i> Создан: {{ portfolio.created_at|date:"d.m.Y" }}
+                </p>
+                <div class="d-flex gap-2">
+                    <a href="{% url 'dashboard:portfolio-detail' pk=portfolio.pk %}" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-chart-pie"></i> Обзор
+                    </a>
+                    <form method="post" action="{% url 'dashboard:portfolio-delete' pk=portfolio.pk %}" style="display:inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить портфель?')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle"></i> У вас пока нет портфелей.
+    <a href="{% url 'dashboard:portfolio-create' %}">Создайте первый портфель</a>
+</div>
+{% endif %}
+{% endblock %}

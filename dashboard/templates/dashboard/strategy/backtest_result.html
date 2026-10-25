@@ -1,0 +1,94 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}<title>Результаты бэктестинга</title>{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="fas fa-chart-bar"></i> Результаты симуляции</h1>
+    <a href="{% url 'dashboard:strategy-detail' pk=strategy.pk %}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Назад к стратегии
+    </a>
+</div>
+
+<!-- Metrics cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card metric-card">
+            <div class="card-body">
+                <h6 class="text-muted">Всего сделок</h6>
+                <h3>{{ metrics.total_trades }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card metric-card">
+            <div class="card-body">
+                <h6 class="text-muted">Win Rate</h6>
+                <h3>{{ metrics.win_rate|floatformat:1 }}%</h3>
+                <small>{{ metrics.winning_trades }}/{{ metrics.total_trades }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card metric-card {% if metrics.total_return_pct >= 0 %}profit{% else %}loss{% endif %}">
+            <div class="card-body">
+                <h6 class="text-muted">Доходность</h6>
+                <h3>{{ metrics.total_return_pct|floatformat:2 }}%</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card metric-card">
+            <div class="card-body">
+                <h6 class="text-muted">Макс. просадка</h6>
+                <h3>{{ metrics.max_drawdown_pct|floatformat:2 }}%</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Trade details -->
+{% if trades %}
+<div class="card">
+    <div class="card-header"><i class="fas fa-list"></i> Детали сделок ({{ trades|length }})</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Дата</th>
+                        <th>Акция</th>
+                        <th>Действие</th>
+                        <th>Кол-во</th>
+                        <th>Цена</th>
+                        <th>Правило</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for trade in trades %}
+                    <tr>
+                        <td>{{ trade.date|date:"d.m.Y H:i" }}</td>
+                        <td>{{ trade.share_ticker }} - {{ trade.share_name }}</td>
+                        <td>
+                            {% if trade.action == "BUY" %}
+                                <span class="badge bg-success">Покупка</span>
+                            {% else %}
+                                <span class="badge bg-danger">Продажа</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ trade.quantity }}</td>
+                        <td>{{ trade.price|floatformat:2 }}</td>
+                        <td><small>{{ trade.rule_triggered|truncatechars:40 }}</small></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle"></i> Сделок не произошло. Проверьте условия стратегии.
+</div>
+{% endif %}
+{% endblock %}

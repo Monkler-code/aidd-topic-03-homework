@@ -1,0 +1,147 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}<title>{{ share.name }} — История цен</title>{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1><i class="fas fa-chart-area"></i> {{ share.ticker }} - {{ share.name }}</h1>
+        <p class="text-muted">Текущая цена: <strong>{{ share.last_price|default:"-" }} {{ share.currency }}</strong></p>
+    </div>
+    <a href="{% url 'dashboard:price-history-list' %}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Назад
+    </a>
+</div>
+
+<!-- Period selector -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-auto">
+                <label class="form-label mb-0">Период:</label>
+            </div>
+            <div class="col-auto">
+                <select name="days" class="form-select" onchange="this.form.submit()">
+                    <option value="7" {% if days == 7 %}selected{% endif %}>7 дней</option>
+                    <option value="30" {% if days == 30 %}selected{% endif %}>1 месяц</option>
+                    <option value="90" {% if days == 90 %}selected{% endif %}>3 месяца</option>
+                    <option value="180" {% if days == 180 %}selected{% endif %}>6 месяцев</option>
+                    <option value="365" {% if days == 365 %}selected{% endif %}>1 год</option>
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Period change -->
+{% if period_change %}
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card metric-card {% if period_change.percent_change >= 0 %}profit{% else %}loss{% endif %}">
+            <div class="card-body">
+                <h6 class="text-muted">Изменение</h6>
+                <h3>{{ period_change.absolute_change|floatformat:2 }}</h3>
+                <small>{{ period_change.percent_change|floatformat:2 }}%</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card metric-card">
+            <div class="card-body">
+                <h6 class="text-muted">Начало периода</h6>
+                <h4>{{ period_change.start_price|floatformat:2 }}</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card metric-card">
+            <div class="card-body">
+                <h6 class="text-muted">Конец периода</h6>
+                <h4>{{ period_change.end_price|floatformat:2 }}</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card metric-card">
+            <div class="card-body">
+                <h6 class="text-muted">Диапазон</h6>
+                <h4>{{ period_change.low|floatformat:2 }} - {{ period_change.high|floatformat:2 }}</h4>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Chart -->
+<div class="card mb-4">
+    <div class="card-header"><i class="fas fa-chart-line"></i> График цены</div>
+    <div class="card-body">
+        <div id="priceChart" style="width:100%;height:400px;"></div>
+    </div>
+</div>
+
+<!-- Price history table -->
+{% if history %}
+<div class="card">
+    <div class="card-header"><i class="fas fa-table"></i> История цен ({{ history|length }} записей)</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Дата</th>
+                        <th>Открытие</th>
+                        <th>Макс</th>
+                        <th>Мин</th>
+                        <th>Закрытие</th>
+                        <th>Объём</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for h in history %}
+                    <tr>
+                        <td>{{ h.date }}</td>
+                        <td>{{ h.open_price|floatformat:2 }}</td>
+                        <td>{{ h.high|floatformat:2 }}</td>
+                        <td>{{ h.low|floatformat:2 }}</td>
+                        <td>{{ h.close|floatformat:2 }}</td>
+                        <td>{{ h.volume }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle"></i> Исторических данных пока нет. Данные будут积累аться автоматически.
+</div>
+{% endif %}
+
+<script>
+// Render chart with Plotly
+document.addEventListener('DOMContentLoaded', function() {
+    const chartData = {{ chart_data|safe }};
+    if (chartData.closes && chartData.closes.length > 0) {
+        const trace = {
+            x: chartData.dates,
+            y: chartData.closes,
+            type: 'scatter',
+            mode: 'lines',
+            name: '{{ share.name }}',
+            line: { color: '#0d6efd', width: 2 }
+        };
+
+        const layout = {
+            title: 'Динамика цены',
+            xaxis: { title: 'Дата' },
+            yaxis: { title: 'Цена' },
+            margin: { t: 40, r: 20, l: 60, b: 40 }
+        };
+
+        Plotly.newPlot('priceChart', [trace], layout);
+    }
+});
+</script>
+{% endblock %}
