@@ -1,4 +1,6 @@
-from django.shortcuts import render, redirect
+"""Views for share management."""
+
+from django.shortcuts import get_object_or_404, render
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, DeleteView, ListView, View, UpdateView
 
@@ -9,16 +11,22 @@ from django.contrib.auth.mixins import UserPassesTestMixin
 
 
 class IsUserAuthenticatedMixin(UserPassesTestMixin):
+    """Mixin that restricts access to authenticated users only."""
+
     def test_func(self):
         return self.request.user.is_authenticated
 
     @staticmethod
     def handle_no_permission():
-        return redirect("dashboard:index")
+        return render(
+            status=403,
+            template_name="user/auth.html",
+            context={"error": "Необходима авторизация для выполнения этого действия."},
+        )
 
 
 class ShareListView(ListView):
-    """Список акций"""
+    """List all shares with pagination."""
 
     model = Share
     template_name = "dashboard/list.html"
@@ -27,19 +35,17 @@ class ShareListView(ListView):
 
 
 class ShareDetailView(View):
+    """Show share details with price chart."""
+
     @staticmethod
     def get(request, pk):
-        share = Share.objects.get(id=pk)
-
-        return render(
-            request,
-            "dashboard/detail.html",
-            {"plot_div": get_graph(share), "share": share},
-        )
+        share = get_object_or_404(Share, id=pk)
+        plot_div = get_graph(share)
+        return render(request, "dashboard/detail.html", {"share": share, "plot_div": plot_div})
 
 
 class ShareCreateView(IsUserAuthenticatedMixin, CreateView):
-    """Добавление инструмента"""
+    """Create a new share."""
 
     template_name = "dashboard/create.html"
     form_class = ShareModelForm
@@ -47,7 +53,7 @@ class ShareCreateView(IsUserAuthenticatedMixin, CreateView):
 
 
 class ShareUpdateView(IsUserAuthenticatedMixin, UpdateView):
-    """Редактирование инструмента"""
+    """Update an existing share."""
 
     model = Share
     template_name = "dashboard/create.html"
@@ -56,8 +62,9 @@ class ShareUpdateView(IsUserAuthenticatedMixin, UpdateView):
 
 
 class ShareDeleteView(IsUserAuthenticatedMixin, DeleteView):
-    """Удаление задачи"""
+    """Delete a share."""
 
     model = Share
     template_name = "dashboard/delete.html"
     success_url = reverse_lazy("dashboard:index")
+    context_object_name = "share"

@@ -1,3 +1,5 @@
+"""Views for user authentication."""
+
 from django.contrib.auth import authenticate, login, logout
 from django.shortcuts import redirect, render
 from django.views.generic import View
@@ -6,39 +8,40 @@ from .forms import AuthForm, RegistrationForm
 
 
 class AuthView(View):
-    """Авторизация"""
+    """User login view."""
 
     @staticmethod
     def get(request):
-        return render(request, "user/auth.html", {"form": AuthForm})
+        return render(request, "user/auth.html", {"form": AuthForm()})
 
     @staticmethod
     def post(request):
         form = AuthForm(request.POST)
-        user = authenticate(
-            request, username=form.data["email"].lower(), password=form.data["password"]
-        )
+        email = form.data.get("email", "").lower()
+        password = form.data.get("password", "")
+
+        user = authenticate(request, username=email, password=password)
 
         if user is not None:
             login(request, user)
             return redirect("dashboard:index")
-        else:
-            return render(
-                request,
-                "user/auth.html",
-                {
-                    "form": form,
-                    "error": "Неверный логин или пароль! Повторите попытку.",
-                },
-            )
+
+        return render(
+            request,
+            "user/auth.html",
+            {
+                "form": form,
+                "error": "Неверный логин или пароль! Повторите попытку.",
+            },
+        )
 
 
 class RegistrationView(View):
-    """Регистрация"""
+    """User registration view."""
 
     @staticmethod
     def get(request):
-        return render(request, "user/registration.html", {"form": RegistrationForm})
+        return render(request, "user/registration.html", {"form": RegistrationForm()})
 
     @staticmethod
     def post(request):
@@ -47,16 +50,24 @@ class RegistrationView(View):
             user = form.save()
             login(request, user)
             return redirect("dashboard:index")
-        else:
-            return render(
-                request,
-                "user/registration.html",
-                {"form": form, "error": form.errors["__all__"].data[0].message},
-            )
+
+        error_messages = []
+        for errors in form.errors.values():
+            if hasattr(errors, "data"):
+                for err in errors.data:
+                    error_messages.append(err.message)
+            else:
+                error_messages.extend(errors)
+
+        return render(
+            request,
+            "user/registration.html",
+            {"form": form, "error": "; ".join(error_messages) if error_messages else "Ошибка регистрации"},
+        )
 
 
 class LogoutView(View):
-    """Выход"""
+    """User logout view."""
 
     @staticmethod
     def get(request):
