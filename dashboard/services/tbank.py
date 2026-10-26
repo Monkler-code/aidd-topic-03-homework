@@ -21,7 +21,7 @@ def get_invest_client(token=None):
 
 
 def quotation_to_float(quotation):
-    """Convert the SDK's units/nano quotation into a decimal float value."""
+    """Convert the SDK's units/nano quotation into a float for compatibility."""
     return float(quotation_to_decimal(quotation))
 
 

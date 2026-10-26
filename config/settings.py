@@ -1,16 +1,19 @@
 import logging
 import os
+import secrets
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+from django.core.exceptions import ImproperlyConfigured
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.environ.get(
-    "DJANGO_SECRET_KEY",
-    "InvestingDemo-local-development-key-only-do-not-use-in-production",
-)
-
-DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() in {"1", "true", "yes"}
+DEBUG = os.environ.get("DJANGO_DEBUG", "false").lower() in {"1", "true", "yes"}
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
+if not SECRET_KEY:
+    if not DEBUG:
+        raise ImproperlyConfigured("Set DJANGO_SECRET_KEY when DEBUG is disabled")
+    SECRET_KEY = secrets.token_urlsafe(50)
 
 SECURE_SSL_REDIRECT = os.environ.get(
     "DJANGO_SECURE_SSL_REDIRECT", str(not DEBUG)
@@ -172,6 +175,9 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 # CELERY_BROKER_URL = 'amqp://guest:guest@localhost:5672'
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+PRICE_UPDATE_INTERVAL_SECONDS = max(
+    10.0, float(os.environ.get("PRICE_UPDATE_INTERVAL_SECONDS", "60"))
+)
 
 """Debug Celery"""
 CELERY_TASK_ALWAYS_EAGER = False

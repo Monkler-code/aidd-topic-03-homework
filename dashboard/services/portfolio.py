@@ -3,16 +3,23 @@ from decimal import Decimal
 
 from django.db import transaction as db_transaction
 
-from dashboard.models import Portfolio, Share, Transaction
+from dashboard.models import Portfolio, Transaction
 
 ZERO = Decimal("0")
 
 
-def calculate_positions(portfolio):
+def _portfolio_transactions(portfolio):
+    prefetched = getattr(portfolio, "_prefetched_objects_cache", {})
+    if "transactions" in prefetched:
+        return list(portfolio.transactions.all())
+    return list(portfolio.transactions.select_related("share").all())
+
+
+def calculate_positions(portfolio, transactions=None):
+    if transactions is None:
+        transactions = _portfolio_transactions(portfolio)
     positions = defaultdict(lambda: {"quantity": ZERO, "average_cost": ZERO})
-    for item in portfolio.transactions.select_related("share").order_by(
-        "executed_at", "id"
-    ):
+    for item in transactions:
         position = positions[item.share_id]
         if item.side == Transaction.Side.BUY:
             old_cost = position["quantity"] * position["average_cost"]
@@ -73,11 +80,9 @@ def record_transaction(
 
 
 def get_portfolio_summary(portfolio):
-    positions = calculate_positions(portfolio)
-    shares = {
-        share.pk: share
-        for share in Share.objects.filter(pk__in=positions).order_by("ticker")
-    }
+    transactions = _portfolio_transactions(portfolio)
+    positions = calculate_positions(portfolio, transactions)
+    shares = {item.share_id: item.share for item in transactions}
     holdings = []
     market_value = ZERO
     cost_basis = ZERO
@@ -90,7 +95,7 @@ def get_portfolio_summary(portfolio):
             continue
         share = shares[share_id]
         basis = quantity * position["average_cost"]
-        last_price = Decimal(str(share.last_price)) if share.last_price is not None else None
+        last_price = share.last_price
         value = quantity * last_price if last_price is not None else None
         pnl = value - basis if value is not None else None
         cost_basis += basis
@@ -110,13 +115,12 @@ def get_portfolio_summary(portfolio):
             }
         )
 
-    realized_pnl = sum(
-        portfolio.transactions.values_list("realized_pnl", flat=True), ZERO
-    )
+    realized_pnl = sum((item.realized_pnl for item in transactions), ZERO)
     invested = sum(
         (
             item.quantity * item.price + item.commission
-            for item in portfolio.transactions.filter(side=Transaction.Side.BUY)
+            for item in transactions
+            if item.side == Transaction.Side.BUY
         ),
         ZERO,
     )

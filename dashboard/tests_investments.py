@@ -96,6 +96,32 @@ class InvestmentServiceTests(TestCase):
         self.assertEqual(summary["market_value"], Decimal("44"))
         self.assertAlmostEqual(float(summary["total_pnl"]), 20.0, places=5)
 
+    def test_portfolio_summary_uses_prefetched_transactions(self):
+        record_transaction(
+            portfolio=self.portfolio,
+            share=self.share,
+            side=Transaction.Side.BUY,
+            quantity=Decimal("1"),
+            price=Decimal("10"),
+        )
+        portfolio = Portfolio.objects.prefetch_related("transactions__share").get(
+            pk=self.portfolio.pk
+        )
+
+        with self.assertNumQueries(0):
+            summary = get_portfolio_summary(portfolio)
+
+        self.assertEqual(summary["holdings"][0]["share"].ticker, "AAPL")
+
+    @patch("dashboard.services.history.sync_historical_prices")
+    @patch("dashboard.services.graph.render_price_graph", return_value="chart")
+    def test_share_graph_uses_local_history_only(self, render_graph, sync_history):
+        from dashboard.services.graph import get_graph
+
+        self.assertEqual(get_graph(self.share), "chart")
+        sync_history.assert_not_called()
+        render_graph.assert_called_once()
+
     def test_cannot_sell_more_than_available_quantity(self):
         with self.assertRaisesRegex(ValueError, "Нельзя продать"):
             record_transaction(

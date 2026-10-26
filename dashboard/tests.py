@@ -1,13 +1,16 @@
-from django.urls import reverse
-from django.contrib.auth import get_user_model
-from django.test import TestCase
-from django.utils import timezone
+from decimal import Decimal
 from types import SimpleNamespace
-from rest_framework import status
-from rest_framework.test import APITestCase
 from unittest.mock import patch
 
-from dashboard.models import Share
+from django.contrib.auth import get_user_model
+from django.http import Http404
+from django.test import RequestFactory, TestCase
+from django.urls import reverse
+from django.utils import timezone
+from rest_framework import status
+from rest_framework.test import APITestCase
+
+from dashboard.models import Portfolio, Share, Transaction
 
 
 class DashboardTests(APITestCase):
@@ -16,6 +19,12 @@ class DashboardTests(APITestCase):
             username="trader@example.com",
             email="trader@example.com",
             password="StrongPass123!",
+        )
+        self.staff_user = get_user_model().objects.create_user(
+            username="staff@example.com",
+            email="staff@example.com",
+            password="StrongPass123!",
+            is_staff=True,
         )
         self.apple_share = Share.objects.create(
             figi="BBG000B9XRY4",
@@ -66,7 +75,7 @@ class DashboardTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_share_update(self):
-        self.client.force_authenticate(user=self.user)
+        self.client.force_authenticate(user=self.staff_user)
         response = self.client.get("/api/v1/shares/")
         share_detail = response.json().get("results")[0]
         response = self.client.put(
@@ -78,6 +87,8 @@ class DashboardTests(APITestCase):
                 "name": f"{self.apple_share.name}_test",
                 "ticker": self.apple_share.ticker,
                 "currency": self.apple_share.currency,
+                "last_price": "0.01",
+                "is_trend_high": False,
             },
             format="json",
         )
@@ -85,9 +96,10 @@ class DashboardTests(APITestCase):
         body = response.json()
         self.assertEqual(body["figi"], self.apple_share.figi)
         self.assertEqual(body["name"], f"{self.apple_share.name}_test")
+        self.assertEqual(body["last_price"], 100.5)
 
     def test_share_update_invalid(self):
-        self.client.force_authenticate(user=self.user)
+        self.client.force_authenticate(user=self.staff_user)
         response = self.client.get("/api/v1/shares/")
         share_detail = response.json().get("results")[0]
         response = self.client.put(
@@ -101,7 +113,7 @@ class DashboardTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_share_create(self):
-        self.client.force_authenticate(user=self.user)
+        self.client.force_authenticate(user=self.staff_user)
         response = self.client.post(
             "/api/v1/shares/", self.second_company, format="json"
         )
@@ -116,7 +128,7 @@ class DashboardTests(APITestCase):
         self.assertEqual(len(response.data["results"]), 2)
 
     def test_share_create_invalid(self):
-        self.client.force_authenticate(user=self.user)
+        self.client.force_authenticate(user=self.staff_user)
         response = self.client.post(
             "/api/v1/shares/",
             {
@@ -132,7 +144,7 @@ class DashboardTests(APITestCase):
         self.assertIn("uid", response.data)
 
     def test_share_delete(self):
-        self.client.force_authenticate(user=self.user)
+        self.client.force_authenticate(user=self.staff_user)
         response = self.client.get("/api/v1/shares/")
         share_detail = response.json().get("results")[0]
         response = self.client.delete(f"/api/v1/shares/{share_detail['id']}/")
@@ -142,16 +154,32 @@ class DashboardTests(APITestCase):
         self.assertEqual(len(response.data["results"]), 0)
 
     def test_share_delete_invalid(self):
-        self.client.force_authenticate(user=self.user)
+        self.client.force_authenticate(user=self.staff_user)
         response = self.client.delete("/api/v1/shares/3/")
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_share_delete_in_use_returns_conflict(self):
+        self.client.force_authenticate(user=self.staff_user)
+        portfolio = Portfolio.objects.create(owner=self.user, name="Long term")
+        Transaction.objects.create(
+            portfolio=portfolio,
+            share=self.apple_share,
+            side=Transaction.Side.BUY,
+            quantity=1,
+            price=100,
+        )
+
+        response = self.client.delete(f"/api/v1/shares/{self.apple_share.pk}/")
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertTrue(Share.objects.filter(pk=self.apple_share.pk).exists())
 
     def test_api_write_requires_authentication(self):
         response = self.client.post("/api/v1/shares/", self.second_company, format="json")
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_share_update_requires_uid_only_on_create(self):
-        self.client.force_authenticate(user=self.user)
+        self.client.force_authenticate(user=self.staff_user)
         response = self.client.put(
             f"/api/v1/shares/{self.apple_share.id}/",
             {
@@ -165,6 +193,18 @@ class DashboardTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["uid"], self.apple_share.uid)
+
+    def test_regular_user_cannot_modify_shared_catalog(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.patch(
+            f"/api/v1/shares/{self.apple_share.pk}/",
+            {"last_price": "0.01", "name": "Changed"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.apple_share.refresh_from_db()
+        self.assertEqual(self.apple_share.name, "Apple")
+        self.assertEqual(self.apple_share.last_price, 100.50)
 
 
 class ShareWebTests(TestCase):
@@ -190,7 +230,7 @@ class ShareWebTests(TestCase):
         response = self.client.get(reverse("dashboard:create"))
         self.assertRedirects(response, reverse("dashboard:index"))
 
-    def test_authenticated_user_can_create_share(self):
+    def test_authenticated_user_cannot_create_shared_catalog_entry(self):
         user = get_user_model().objects.create_user(
             username="trader@example.com",
             email="trader@example.com",
@@ -210,7 +250,61 @@ class ShareWebTests(TestCase):
         )
 
         self.assertRedirects(response, reverse("dashboard:index"))
+        self.assertFalse(Share.objects.filter(ticker="NEWCO").exists())
+
+    def test_staff_user_can_create_shared_catalog_entry(self):
+        user = get_user_model().objects.create_user(
+            username="staff@example.com",
+            email="staff@example.com",
+            password="StrongPass123!",
+            is_staff=True,
+        )
+        self.client.force_login(user)
+        response = self.client.post(
+            reverse("dashboard:create"),
+            {
+                "figi": "BBG000B9XRY5",
+                "isin": "US0378331004",
+                "name": "New Company",
+                "ticker": "NEWCO",
+                "currency": "usd",
+                "uid": "a9eb4238-eba9-488c-b102-b6140fd08e39",
+            },
+        )
+        self.assertRedirects(response, reverse("dashboard:index"))
         self.assertTrue(Share.objects.filter(ticker="NEWCO").exists())
+
+    def test_staff_cannot_delete_share_referenced_by_a_trade(self):
+        user = get_user_model().objects.create_user(
+            username="staff@example.com",
+            email="staff@example.com",
+            password="StrongPass123!",
+            is_staff=True,
+        )
+        portfolio = Portfolio.objects.create(owner=user, name="Long term")
+        Transaction.objects.create(
+            portfolio=portfolio,
+            share=self.share,
+            side=Transaction.Side.BUY,
+            quantity=1,
+            price=100,
+        )
+        self.client.force_login(user)
+
+        response = self.client.post(reverse("dashboard:delete", args=[self.share.pk]))
+
+        self.assertRedirects(
+            response,
+            reverse("dashboard:detail", args=[self.share.pk]),
+            fetch_redirect_response=False,
+        )
+        self.assertTrue(Share.objects.filter(pk=self.share.pk).exists())
+
+    def test_share_detail_missing_returns_404(self):
+        from dashboard.views import ShareDetailView
+
+        with self.assertRaises(Http404):
+            ShareDetailView.as_view()(RequestFactory().get("/999"), pk=999)
 
 
 class PriceUpdateTests(TestCase):
@@ -232,15 +326,37 @@ class PriceUpdateTests(TestCase):
 
         from dashboard.tasks import update_last_price
 
-        update_last_price()
+        with patch("dashboard.tasks.Redis.from_url") as redis_from_url, patch(
+            "dashboard.tasks.get_invest_client"
+        ) as get_invest_client:
+            redis_client = redis_from_url.return_value
+            redis_client.lock.return_value.acquire.return_value = True
+            get_invest_client.return_value.__enter__.return_value = object()
+            update_last_price()
         self.share.refresh_from_db()
 
         self.assertEqual(self.share.last_price, 100.5)
         self.assertFalse(self.share.is_trend_high)
         self.assertGreaterEqual(self.share.updated_at, self.previous_update)
 
+    @patch("dashboard.tasks.get_invest_client")
+    @patch("dashboard.tasks.get_last_data")
+    @patch("dashboard.tasks.Redis.from_url")
+    def test_task_skips_when_another_update_holds_the_lock(
+        self, redis_from_url, get_last_data, get_invest_client
+    ):
+        redis_from_url.return_value.lock.return_value.acquire.return_value = False
+
+        from dashboard.tasks import update_last_price
+
+        update_last_price()
+
+        get_invest_client.assert_not_called()
+        get_last_data.assert_not_called()
+
     def test_quotation_conversion_preserves_fractional_units(self):
-        from dashboard.services.tbank import quotation_to_float
+        from dashboard.services.tbank import quotation_to_decimal, quotation_to_float
 
         quotation = SimpleNamespace(units=123, nano=450_000_000)
         self.assertEqual(quotation_to_float(quotation), 123.45)
+        self.assertEqual(quotation_to_decimal(quotation), Decimal("123.45"))

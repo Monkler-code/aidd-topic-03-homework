@@ -6,7 +6,7 @@
 
 {% block content %}
 
-    {% if user.is_authenticated %}
+    {% if user.is_staff %}
         <div>
             <a href="{% url 'dashboard:create' %}" class="btn btn-primary">Добавить</a>
         </div>
@@ -20,7 +20,7 @@
                 <th scope="col">Название</th>
                 <th scope="col">ISIN</th>
                 <th scope="col">Текущая цена</th>
-                {% if user.is_authenticated %}
+                {% if user.is_staff %}
                     <th scope="col">Управление</th>
                 {% endif %}
             </tr>
@@ -38,7 +38,7 @@
                         <td style="background-color: palevioletred">
                     {% endif %}
                     {{share.last_price}} {{ share.currency }}</td>
-                    {% if user.is_authenticated %}
+                    {% if user.is_staff %}
                         <td>
                             <a href="{% url 'dashboard:update' share.id %}" class="btn btn-secondary">
                                 Редактировать

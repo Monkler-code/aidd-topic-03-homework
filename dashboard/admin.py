@@ -28,6 +28,7 @@ class ShareAdmin(admin.ModelAdmin):
         "last_price",
         "is_trend_high",
     )
+    readonly_fields = ("last_price", "is_trend_high")
 
 
 admin.site.register(

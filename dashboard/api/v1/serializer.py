@@ -5,6 +5,8 @@ from dashboard.models import Share
 
 class ShareSerializer(serializers.ModelSerializer):
     uid = serializers.CharField(required=False)
+    # Keep the existing JSON number representation while storing prices as Decimal.
+    last_price = serializers.FloatField(read_only=True, allow_null=True)
 
     class Meta:
         model = Share
@@ -20,6 +22,7 @@ class ShareSerializer(serializers.ModelSerializer):
             "is_trend_high",
             "updated_at",
         )
+        read_only_fields = ("is_trend_high", "updated_at")
 
     def validate(self, attrs):
         if self.instance is None and not attrs.get("uid"):
