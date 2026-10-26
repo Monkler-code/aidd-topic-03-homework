@@ -1,8 +1,11 @@
+from django.contrib import messages
 from django.contrib.auth import authenticate, get_user_model, login, logout
+from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.views.generic import View
 
 from .forms import AuthForm, RegistrationForm
+from .rate_limit import allow_attempt, clear_attempts
 
 
 class AuthView(View):
@@ -14,6 +17,11 @@ class AuthView(View):
 
     @staticmethod
     def post(request):
+        if not allow_attempt(request, "login"):
+            return HttpResponse(
+                "Слишком много попыток. Попробуйте позже.", status=429
+            )
+
         form = AuthForm(request.POST)
         if not form.is_valid():
             return render(request, "user/auth.html", {"form": form})
@@ -32,6 +40,7 @@ class AuthView(View):
 
         if user is not None:
             login(request, user)
+            clear_attempts(request, "login")
             return redirect("dashboard:index")
         return render(
             request,
@@ -52,11 +61,17 @@ class RegistrationView(View):
 
     @staticmethod
     def post(request):
+        if not allow_attempt(request, "registration"):
+            return HttpResponse(
+                "Слишком много попыток. Попробуйте позже.", status=429
+            )
+
         form = RegistrationForm(request.POST)
         if form.is_valid():
-            user = form.save()
-            login(request, user)
-            return redirect("dashboard:index")
+            form.save()
+            # Keep the response identical whether the address was already registered.
+            messages.info(request, "Запрос обработан. Попробуйте войти в систему.")
+            return redirect("user:auth")
         return render(request, "user/registration.html", {"form": form})
 
 

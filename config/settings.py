@@ -33,6 +33,9 @@ ALLOWED_HOSTS = [
     ).split(",")
     if host.strip()
 ]
+AUTH_RATE_LIMIT_IP_HEADER = os.environ.get(
+    "DJANGO_AUTH_RATE_LIMIT_IP_HEADER", "REMOTE_ADDR"
+)
 
 
 INSTALLED_APPS = [
@@ -175,6 +178,34 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 # CELERY_BROKER_URL = 'amqp://guest:guest@localhost:5672'
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+CACHE_URL = os.environ.get("DJANGO_CACHE_URL")
+if CACHE_URL is None and not DEBUG and CELERY_BROKER_URL.startswith(
+    ("redis://", "rediss://")
+):
+    CACHE_URL = CELERY_BROKER_URL
+
+if CACHE_URL:
+    if not CACHE_URL.startswith(("redis://", "rediss://")):
+        raise ImproperlyConfigured("DJANGO_CACHE_URL must use redis or rediss scheme")
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": CACHE_URL,
+            "KEY_PREFIX": "investing",
+        }
+    }
+elif DEBUG:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "investing-local-cache",
+        }
+    }
+else:
+    raise ImproperlyConfigured(
+        "Set DJANGO_CACHE_URL to a shared Redis cache when DEBUG is disabled"
+    )
+
 PRICE_UPDATE_INTERVAL_SECONDS = max(
     10.0, float(os.environ.get("PRICE_UPDATE_INTERVAL_SECONDS", "60"))
 )

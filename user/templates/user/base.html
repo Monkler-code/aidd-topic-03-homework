@@ -12,6 +12,9 @@
 <body>
 
 <main class="form-signin">
+    {% if messages %}
+        {% for message in messages %}<p class="text-muted" role="status">{{ message }}</p>{% endfor %}
+    {% endif %}
 
     {% block content %}
     {% endblock %}

@@ -9,6 +9,7 @@ from .models import (
     Transaction,
     Watchlist,
 )
+from .services.backtesting import MAX_BACKTEST_DAYS, MAX_LOOKBACK_DAYS
 
 
 class ShareModelForm(forms.ModelForm):
@@ -72,6 +73,12 @@ class TradingStrategyForm(forms.ModelForm):
     def clean_commission_percent(self):
         return self.cleaned_data.get("commission_percent") or Decimal("0")
 
+    def clean_lookback_days(self):
+        lookback_days = self.cleaned_data["lookback_days"]
+        if lookback_days > MAX_LOOKBACK_DAYS:
+            raise forms.ValidationError("Окно анализа не может превышать 3650 дней.")
+        return lookback_days
+
 
 class StrategyRunForm(forms.Form):
     start_date = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
@@ -83,4 +90,10 @@ class StrategyRunForm(forms.Form):
         end_date = cleaned_data.get("end_date")
         if start_date and end_date and start_date > end_date:
             self.add_error("end_date", "Конечная дата должна быть не раньше начальной.")
+        elif (
+            start_date
+            and end_date
+            and (end_date - start_date).days > MAX_BACKTEST_DAYS
+        ):
+            self.add_error("end_date", "Период симуляции не может превышать 3650 дней.")
         return cleaned_data

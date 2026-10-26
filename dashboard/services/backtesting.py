@@ -1,14 +1,17 @@
 from bisect import bisect_right
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from decimal import Decimal, ROUND_FLOOR
 
 from django.db import transaction as db_transaction
+from django.utils import timezone
 
 from dashboard.models import HistoricalPrice, StrategyRun, StrategyTrade
 
 ZERO = Decimal("0")
 ONE_HUNDRED = Decimal("100")
 SIX_PLACES = Decimal("0.000001")
+MAX_BACKTEST_DAYS = 3650
+MAX_LOOKBACK_DAYS = 3650
 
 
 def _money(value):
@@ -19,19 +22,43 @@ def _money(value):
 def run_backtest(strategy, start_date, end_date):
     if start_date > end_date:
         raise ValueError("Начальная дата должна быть не позже конечной.")
+    if (end_date - start_date).days > MAX_BACKTEST_DAYS:
+        raise ValueError("Период симуляции не может превышать 3650 дней.")
+    if end_date > timezone.localdate():
+        raise ValueError("Конечная дата не может быть в будущем.")
+    if strategy.lookback_days > MAX_LOOKBACK_DAYS:
+        raise ValueError("Окно анализа не может превышать 3650 дней.")
+
+    try:
+        history_start = start_date - timedelta(days=strategy.lookback_days)
+        history_end = end_date + timedelta(days=1)
+    except OverflowError as exc:
+        raise ValueError("Указана дата за пределами поддерживаемого диапазона.") from exc
+
+    current_timezone = timezone.get_current_timezone()
+    history_start_at = timezone.make_aware(
+        datetime.combine(history_start, time.min), current_timezone
+    )
+    history_end_at = timezone.make_aware(
+        datetime.combine(history_end, time.min), current_timezone
+    )
 
     rows = list(
         HistoricalPrice.objects.filter(
             share=strategy.share,
-            captured_at__date__gte=start_date - timedelta(days=strategy.lookback_days),
-            captured_at__date__lte=end_date,
+            captured_at__gte=history_start_at,
+            captured_at__lt=history_end_at,
         ).order_by("captured_at")
     )
-    trading_rows = [row for row in rows if row.captured_at.date() >= start_date]
+    trading_rows = [
+        row
+        for row in rows
+        if timezone.localtime(row.captured_at).date() >= start_date
+    ]
     if not trading_rows:
         raise ValueError("За выбранный период нет сохранённых дневных цен.")
 
-    prices_by_date = [row.captured_at.date() for row in rows]
+    prices_by_date = [timezone.localtime(row.captured_at).date() for row in rows]
     cash = strategy.initial_capital
     initial_capital = strategy.initial_capital
     quantity = ZERO
@@ -45,7 +72,7 @@ def run_backtest(strategy, start_date, end_date):
 
     for row in trading_rows:
         price = row.close
-        day = row.captured_at.date()
+        day = timezone.localtime(row.captured_at).date()
         lookback_date = day - timedelta(days=strategy.lookback_days)
         reference_index = bisect_right(prices_by_date, lookback_date) - 1
         reference_price = rows[reference_index].close if reference_index >= 0 else None

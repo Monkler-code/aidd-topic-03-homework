@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from decimal import Decimal
 
 from django.utils import timezone
@@ -42,10 +42,15 @@ def prices_for_period(share, period):
         raise ValueError("Период должен быть day, week, month или year.")
     today = timezone.localdate()
     start = today - timedelta(days=PERIOD_DAYS[period] - 1)
+    current_timezone = timezone.get_current_timezone()
+    start_at = timezone.make_aware(datetime.combine(start, time.min), current_timezone)
+    end_at = timezone.make_aware(
+        datetime.combine(today + timedelta(days=1), time.min), current_timezone
+    )
     return HistoricalPrice.objects.filter(
         share=share,
-        captured_at__date__gte=start,
-        captured_at__date__lte=today,
+        captured_at__gte=start_at,
+        captured_at__lt=end_at,
     ).order_by("captured_at")
 
 

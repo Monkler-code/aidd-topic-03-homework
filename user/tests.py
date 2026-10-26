@@ -4,7 +4,7 @@ from django.urls import reverse
 
 
 class AuthenticationTests(TestCase):
-    def test_registration_normalizes_email_and_logs_user_in(self):
+    def test_registration_normalizes_email_without_logging_user_in(self):
         response = self.client.post(
             reverse("user:registration"),
             {
@@ -14,10 +14,10 @@ class AuthenticationTests(TestCase):
             },
         )
 
-        self.assertRedirects(response, reverse("dashboard:index"))
+        self.assertRedirects(response, reverse("user:auth"))
         user = get_user_model().objects.get()
         self.assertEqual(user.email, "trader@example.com")
-        self.assertTrue(user.is_authenticated)
+        self.assertNotIn("_auth_user_id", self.client.session)
 
     def test_invalid_registration_renders_errors(self):
         response = self.client.post(
@@ -29,7 +29,7 @@ class AuthenticationTests(TestCase):
         self.assertContains(response, "Enter a valid email address")
         self.assertFalse(get_user_model().objects.exists())
 
-    def test_registration_rejects_duplicate_email_case_insensitively(self):
+    def test_registration_response_does_not_reveal_duplicate_email(self):
         get_user_model().objects.create_user(
             username="trader@example.com",
             email="trader@example.com",
@@ -44,8 +44,7 @@ class AuthenticationTests(TestCase):
             },
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Данный e-mail уже зарегистрирован")
+        self.assertRedirects(response, reverse("user:auth"))
         self.assertEqual(get_user_model().objects.count(), 1)
 
     def test_login_rejects_missing_fields_without_raising(self):

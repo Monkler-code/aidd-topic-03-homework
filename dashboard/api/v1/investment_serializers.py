@@ -13,6 +13,7 @@ from dashboard.models import (
     WatchlistItem,
 )
 from dashboard.services.portfolio import get_portfolio_summary
+from dashboard.services.backtesting import MAX_BACKTEST_DAYS, MAX_LOOKBACK_DAYS
 
 
 class WatchlistSerializer(serializers.ModelSerializer):
@@ -237,6 +238,10 @@ class TradingStrategySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"lookback_days": "Окно должно быть не меньше одного дня."}
             )
+        if lookback_days is not None and lookback_days > MAX_LOOKBACK_DAYS:
+            raise serializers.ValidationError(
+                {"lookback_days": "Окно анализа не может превышать 3650 дней."}
+            )
         if sell_profit is not None and sell_profit <= 0:
             raise serializers.ValidationError(
                 {"sell_profit_percent": "Целевая прибыль должна быть больше нуля."}
@@ -260,6 +265,10 @@ class StrategyRunInputSerializer(serializers.Serializer):
         if attrs["start_date"] > attrs["end_date"]:
             raise serializers.ValidationError(
                 {"end_date": "Конечная дата должна быть не раньше начальной."}
+            )
+        if (attrs["end_date"] - attrs["start_date"]).days > MAX_BACKTEST_DAYS:
+            raise serializers.ValidationError(
+                {"end_date": "Период симуляции не может превышать 3650 дней."}
             )
         return attrs
 
