@@ -1,13 +1,35 @@
 import logging
+import os
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = ""
+SECRET_KEY = os.environ.get(
+    "DJANGO_SECRET_KEY",
+    "InvestingDemo-local-development-key-only-do-not-use-in-production",
+)
 
-DEBUG = True
+DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() in {"1", "true", "yes"}
 
-ALLOWED_HOSTS = []
+SECURE_SSL_REDIRECT = os.environ.get(
+    "DJANGO_SECURE_SSL_REDIRECT", str(not DEBUG)
+).lower() in {"1", "true", "yes"}
+SESSION_COOKIE_SECURE = os.environ.get(
+    "DJANGO_SECURE_COOKIES", str(not DEBUG)
+).lower() in {"1", "true", "yes"}
+CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
+SECURE_HSTS_SECONDS = int(
+    os.environ.get("DJANGO_SECURE_HSTS_SECONDS", "31536000" if not DEBUG else "0")
+)
+
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get(
+        "DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,testserver"
+    ).split(",")
+    if host.strip()
+]
 
 
 INSTALLED_APPS = [
@@ -17,16 +39,11 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "crispy_forms",
-    "crispy_bootstrap3",
     "dashboard",
     "user",
     "rest_framework",
     "django_filters",
 ]
-
-CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap3"
-CRISPY_TEMPLATE_PACK = "bootstrap3"
 
 REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.LimitOffsetPagination",
@@ -88,20 +105,29 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-DATABASES = {
-    # 'default': {
-    #     'ENGINE': 'django.db.backends.sqlite3',
-    #     'NAME': BASE_DIR / 'db.sqlite3',
-    # }
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": "investing",
-        "USER": "postgres",
-        "PASSWORD": "postgres",
-        "HOST": "localhost",
-        "PORT": "5432",
+database_url = os.environ.get("DATABASE_URL")
+if database_url:
+    database = urlparse(database_url)
+    if database.scheme not in {"postgres", "postgresql"}:
+        raise ValueError("DATABASE_URL must use the postgres or postgresql scheme")
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": database.path.lstrip("/"),
+            "USER": unquote(database.username or ""),
+            "PASSWORD": unquote(database.password or ""),
+            "HOST": database.hostname or "localhost",
+            "PORT": str(database.port or 5432),
+            "CONN_MAX_AGE": 60,
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -131,14 +157,14 @@ STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-TINKOFF_TOKEN = ""
+TINKOFF_TOKEN = os.environ.get("TINKOFF_TOKEN", "")
 
 """Celery Configuration Options"""
 CELERY_TIMEZONE = "Europe/Moscow"
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 # CELERY_BROKER_URL = 'amqp://guest:guest@localhost:5672'
-CELERY_BROKER_URL = "redis://127.0.0.1:6379/0"
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
 
 """Debug Celery"""
 CELERY_TASK_ALWAYS_EAGER = False

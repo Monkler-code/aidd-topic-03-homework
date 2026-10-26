@@ -4,11 +4,14 @@ from dashboard.models import Share
 
 
 class ShareSerializer(serializers.ModelSerializer):
+    uid = serializers.CharField(required=False)
+
     class Meta:
         model = Share
         fields = (
             "id",
             "figi",
+            "uid",
             "isin",
             "name",
             "ticker",
@@ -17,3 +20,8 @@ class ShareSerializer(serializers.ModelSerializer):
             "is_trend_high",
             "updated_at",
         )
+
+    def validate(self, attrs):
+        if self.instance is None and not attrs.get("uid"):
+            raise serializers.ValidationError({"uid": "This field is required."})
+        return attrs

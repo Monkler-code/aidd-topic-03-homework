@@ -1,4 +1,4 @@
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.shortcuts import redirect, render
 from django.views.generic import View
 
@@ -15,22 +15,32 @@ class AuthView(View):
     @staticmethod
     def post(request):
         form = AuthForm(request.POST)
-        user = authenticate(
-            request, username=form.data["email"].lower(), password=form.data["password"]
-        )
+        if not form.is_valid():
+            return render(request, "user/auth.html", {"form": form})
+
+        email = form.cleaned_data["email"].strip().lower()
+        password = form.cleaned_data["password"]
+        user = authenticate(request, username=email, password=password)
+
+        # Support accounts registered before email normalization was introduced.
+        if user is None:
+            account = get_user_model().objects.filter(email__iexact=email).first()
+            if account:
+                user = authenticate(
+                    request, username=account.get_username(), password=password
+                )
 
         if user is not None:
             login(request, user)
             return redirect("dashboard:index")
-        else:
-            return render(
-                request,
-                "user/auth.html",
-                {
-                    "form": form,
-                    "error": "Неверный логин или пароль! Повторите попытку.",
-                },
-            )
+        return render(
+            request,
+            "user/auth.html",
+            {
+                "form": form,
+                "error": "Неверный логин или пароль! Повторите попытку.",
+            },
+        )
 
 
 class RegistrationView(View):
@@ -47,18 +57,13 @@ class RegistrationView(View):
             user = form.save()
             login(request, user)
             return redirect("dashboard:index")
-        else:
-            return render(
-                request,
-                "user/registration.html",
-                {"form": form, "error": form.errors["__all__"].data[0].message},
-            )
+        return render(request, "user/registration.html", {"form": form})
 
 
 class LogoutView(View):
     """Выход"""
 
     @staticmethod
-    def get(request):
+    def post(request):
         logout(request)
         return redirect("dashboard:index")

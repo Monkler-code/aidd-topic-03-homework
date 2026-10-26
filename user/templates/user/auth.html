@@ -4,12 +4,7 @@
     {% csrf_token %}
     <h1 class="h3 mb-3 fw-normal">Войдите в профиль</h1>
 
-    <div>
-        {{ form.email }}
-    </div>
-    <div>
-        {{ form.password }}
-    </div>
+    {{ form.as_p }}
     <div>
         {{ error }}
     </div>
