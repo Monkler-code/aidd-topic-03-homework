@@ -1,0 +1,21 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}<title>Виртуальные портфели</title>{% endblock %}
+
+{% block content %}
+<h1>Виртуальные портфели</h1>
+<form method="post" class="mb-4">
+    {% csrf_token %}{{ form.as_p }}
+    <button class="btn btn-primary" type="submit">Создать портфель</button>
+</form>
+<ul class="list-group">
+    {% for portfolio in portfolios %}
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+            <a href="{% url 'dashboard:portfolio-detail' portfolio.id %}">{{ portfolio.name }}</a> — {{ portfolio.currency }}
+            <form method="post" action="{% url 'dashboard:portfolio-delete' portfolio.id %}">
+                {% csrf_token %}<button class="btn btn-sm btn-outline-danger" type="submit">Удалить</button>
+            </form>
+        </li>
+    {% empty %}<li class="list-group-item">Портфелей пока нет.</li>{% endfor %}
+</ul>
+{% endblock %}

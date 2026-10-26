@@ -1,0 +1,35 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}<title>{{ portfolio.name }}</title>{% endblock %}
+
+{% block content %}
+<h1>{{ portfolio.name }}</h1>
+<p>Рыночная стоимость: {{ summary.market_value }} {{ portfolio.currency }} · Себестоимость: {{ summary.cost_basis }} {{ portfolio.currency }}</p>
+<p>Реализованный P&amp;L: {{ summary.realized_pnl }} · Нереализованный P&amp;L: {{ summary.unrealized_pnl }}</p>
+<p class="{% if summary.total_pnl >= 0 %}text-success{% else %}text-danger{% endif %}">
+    Общий P&amp;L: {{ summary.total_pnl }} {{ portfolio.currency }} ({{ summary.return_percent|floatformat:2 }}%)
+</p>
+{% if summary.unpriced_tickers %}<p class="text-warning">Нет текущей цены: {{ summary.unpriced_tickers|join:", " }}</p>{% endif %}
+
+<h2 class="h4">Позиции</h2>
+<div class="table-responsive"><table class="table table-striped">
+    <thead><tr><th>Тикер</th><th>Количество</th><th>Средняя цена</th><th>Текущая цена</th><th>Стоимость</th><th>P&amp;L</th></tr></thead>
+    <tbody>{% for holding in summary.holdings %}
+        <tr><td>{{ holding.share.ticker }}</td><td>{{ holding.quantity }}</td><td>{{ holding.average_cost }}</td><td>{{ holding.last_price|default_if_none:"—" }}</td><td>{{ holding.market_value|default_if_none:"—" }}</td>
+            <td class="{% if holding.unrealized_pnl >= 0 %}text-success{% else %}text-danger{% endif %}">{{ holding.unrealized_pnl|default_if_none:"—" }}</td></tr>
+    {% empty %}<tr><td colspan="6">Открытых позиций нет.</td></tr>{% endfor %}</tbody>
+</table></div>
+
+<h2 class="h4">Добавить сделку</h2>
+<form method="post" class="mb-4">
+    {% csrf_token %}{{ form.as_p }}
+    <button class="btn btn-primary" type="submit">Записать сделку</button>
+</form>
+
+<h2 class="h4">История операций</h2>
+<div class="table-responsive"><table class="table table-striped">
+    <thead><tr><th>Дата</th><th>Тип</th><th>Тикер</th><th>Количество</th><th>Цена</th><th>Комиссия</th><th>Реализованный P&amp;L</th></tr></thead>
+    <tbody>{% for item in transactions %}<tr><td>{{ item.executed_at }}</td><td>{{ item.get_side_display }}</td><td>{{ item.share.ticker }}</td><td>{{ item.quantity }}</td><td>{{ item.price }}</td><td>{{ item.commission }}</td><td>{{ item.realized_pnl }}</td></tr>
+    {% empty %}<tr><td colspan="7">Операций пока нет.</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endblock %}

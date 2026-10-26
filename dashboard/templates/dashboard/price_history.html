@@ -1,0 +1,17 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}<title>История цены {{ share.ticker }}</title>{% endblock %}
+
+{% block content %}
+<h1>История цены: {{ share.ticker }}</h1>
+<nav class="btn-group mb-3" aria-label="Период">
+    <a class="btn btn-outline-primary" href="?period=day">День</a>
+    <a class="btn btn-outline-primary" href="?period=week">Неделя</a>
+    <a class="btn btn-outline-primary" href="?period=month">Месяц</a>
+    <a class="btn btn-outline-primary" href="?period=year">Год</a>
+</nav>
+{% if summary.first_price %}
+    <p>Изменение: <span class="{% if summary.absolute_change >= 0 %}text-success{% else %}text-danger{% endif %}">{{ summary.absolute_change }} ({{ summary.percent_change|floatformat:2 }}%)</span></p>
+{% else %}<p>Для выбранного периода нет данных.</p>{% endif %}
+{% autoescape off %}{{ plot_div }}{% endautoescape %}
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}<title>{{ watchlist.name }}</title>{% endblock %}
+
+{% block content %}
+<h1>{{ watchlist.name }}</h1>
+<form method="post" class="row g-2 mb-3">
+    {% csrf_token %}<input type="hidden" name="action" value="rename">
+    <div class="col-auto">{{ rename_form.name }}</div>
+    <div class="col-auto"><button class="btn btn-outline-secondary" type="submit">Переименовать</button></div>
+</form>
+<h2 class="h4">Акции</h2>
+<form method="post" class="row g-2 mb-3">
+    {% csrf_token %}<input type="hidden" name="action" value="add-share">
+    <div class="col-auto">{{ share_form.share }}</div>
+    <div class="col-auto"><button class="btn btn-primary" type="submit">Добавить</button></div>
+</form>
+<ul class="list-group mb-4">
+    {% for item in items %}
+        <li class="list-group-item d-flex justify-content-between">
+            <a href="{% url 'dashboard:detail' item.share.id %}">{{ item.share.ticker }} — {{ item.share.name }}</a>
+            <form method="post">
+                {% csrf_token %}<input type="hidden" name="action" value="remove-share">
+                <input type="hidden" name="share_id" value="{{ item.share.id }}">
+                <button class="btn btn-sm btn-outline-danger" type="submit">Убрать</button>
+            </form>
+        </li>
+    {% empty %}<li class="list-group-item">В списке пока нет акций.</li>{% endfor %}
+</ul>
+
+<h2 class="h4">Ценовые алерты</h2>
+<form method="post" class="mb-4">
+    {% csrf_token %}<input type="hidden" name="action" value="add-alert">
+    {{ alert_form.as_p }}
+    <button class="btn btn-primary" type="submit">Создать алерт</button>
+</form>
+<div class="table-responsive">
+    <table class="table table-striped">
+        <thead><tr><th>Акция</th><th>Условие</th><th>Целевая цена</th><th>Статус</th><th>Сработал</th><th></th></tr></thead>
+        <tbody>
+        {% for alert in alerts %}
+            <tr>
+                <td>{{ alert.share.ticker }}</td><td>{{ alert.get_direction_display }}</td>
+                <td>{{ alert.target_price }}</td><td>{{ alert.get_status_display }}</td>
+                <td>{% if alert.triggered_at %}{{ alert.triggered_at }} @ {{ alert.triggered_price }}{% endif %}</td>
+                <td class="d-flex gap-2">
+                    {% if alert.status == "triggered" %}
+                    <form method="post" action="{% url 'dashboard:alert-reset' alert.id %}">
+                        {% csrf_token %}<input type="hidden" name="watchlist_id" value="{{ watchlist.id }}">
+                        <button class="btn btn-sm btn-outline-primary" type="submit">Сбросить</button>
+                    </form>
+                    {% endif %}
+                    <form method="post">
+                        {% csrf_token %}<input type="hidden" name="action" value="delete-alert">
+                        <input type="hidden" name="alert_id" value="{{ alert.id }}">
+                        <button class="btn btn-sm btn-outline-danger" type="submit">Удалить</button>
+                    </form>
+                </td>
+            </tr>
+        {% empty %}<tr><td colspan="6">Алертов пока нет.</td></tr>{% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -11,6 +11,7 @@
         Инструмент: {{ share.name }} <br>
         Текущая цена: {{ share.last_price }} {{ share.currency }} <br>
         Время последнего обновления: {{ share.updated_at }}
+        <a href="{% url 'dashboard:price-history' share.id %}" class="btn btn-outline-primary mt-2">История цен</a>
     </div>
     <div class="col3"></div>
     </div>

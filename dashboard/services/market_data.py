@@ -1,5 +1,9 @@
-from .tbank import get_invest_client, quotation_to_float
+from datetime import timedelta
+
+from django.utils import timezone
+
 from config.settings import logger
+from dashboard.services.tbank import get_invest_client, quotation_to_float
 
 
 def get_last_data(share):
@@ -10,3 +14,16 @@ def get_last_data(share):
         last_price = response.last_prices[0]
         logger.info("Get last data for share with id %s", share.id)
         return quotation_to_float(last_price.price), last_price.time
+
+
+def get_historical_candles(share, days=365):
+    from t_tech.invest import CandleInterval
+
+    with get_invest_client() as client:
+        return list(
+            client.get_all_candles(
+                figi=share.figi,
+                from_=timezone.now() - timedelta(days=days),
+                interval=CandleInterval.CANDLE_INTERVAL_DAY,
+            )
+        )

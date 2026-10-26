@@ -108,19 +108,26 @@ WSGI_APPLICATION = "config.wsgi.application"
 database_url = os.environ.get("DATABASE_URL")
 if database_url:
     database = urlparse(database_url)
-    if database.scheme not in {"postgres", "postgresql"}:
-        raise ValueError("DATABASE_URL must use the postgres or postgresql scheme")
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": database.path.lstrip("/"),
-            "USER": unquote(database.username or ""),
-            "PASSWORD": unquote(database.password or ""),
-            "HOST": database.hostname or "localhost",
-            "PORT": str(database.port or 5432),
-            "CONN_MAX_AGE": 60,
+    if database.scheme in {"postgres", "postgresql"}:
+        DATABASES = {
+            "default": {
+                "ENGINE": "django.db.backends.postgresql",
+                "NAME": database.path.lstrip("/"),
+                "USER": unquote(database.username or ""),
+                "PASSWORD": unquote(database.password or ""),
+                "HOST": database.hostname or "localhost",
+                "PORT": str(database.port or 5432),
+                "CONN_MAX_AGE": 60,
+            }
         }
-    }
+    elif database.scheme == "sqlite":
+        if database_url.startswith("sqlite:////"):
+            sqlite_name = "/" + database_url.removeprefix("sqlite:////")
+        else:
+            sqlite_name = str(BASE_DIR / unquote(database.path).lstrip("/"))
+        DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": sqlite_name}}
+    else:
+        raise ValueError("DATABASE_URL must use postgres, postgresql or sqlite scheme")
 else:
     DATABASES = {
         "default": {

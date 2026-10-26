@@ -1,6 +1,17 @@
 from django.contrib import admin
 
-from dashboard.models import Share
+from dashboard.models import (
+    HistoricalPrice,
+    Portfolio,
+    PriceAlert,
+    Share,
+    StrategyRun,
+    StrategyTrade,
+    TradingStrategy,
+    Transaction,
+    Watchlist,
+    WatchlistItem,
+)
 
 
 @admin.register(Share)
@@ -17,3 +28,9 @@ class ShareAdmin(admin.ModelAdmin):
         "last_price",
         "is_trend_high",
     )
+
+
+admin.site.register(
+    (Watchlist, WatchlistItem, PriceAlert, Portfolio, Transaction, HistoricalPrice,
+     TradingStrategy, StrategyRun, StrategyTrade)
+)

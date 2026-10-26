@@ -1,0 +1,32 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}<title>Симулятор стратегий</title>{% endblock %}
+
+{% block content %}
+<h1>Симулятор стратегий</h1>
+<h2 class="h4">Новая стратегия</h2>
+<form method="post" class="mb-4">
+    {% csrf_token %}{{ form.as_p }}
+    <button class="btn btn-primary" type="submit">Сохранить стратегию</button>
+</form>
+
+{% for strategy in strategies %}
+    <section class="card mb-4"><div class="card-body">
+        <h2 class="h5">{{ strategy.name }} — {{ strategy.share.ticker }}</h2>
+        <p>Покупка после падения {{ strategy.buy_drop_percent }}% за {{ strategy.lookback_days }} дней; продажа при прибыли {{ strategy.sell_profit_percent }}%; комиссия {{ strategy.commission_percent }}%.</p>
+        <form method="post" action="{% url 'dashboard:strategy-run' strategy.id %}" class="row g-2">
+            {% csrf_token %}
+            <div class="col-auto"><label class="form-label" for="start-{{ strategy.id }}">С</label><input class="form-control" type="date" id="start-{{ strategy.id }}" name="start_date" required></div>
+            <div class="col-auto"><label class="form-label" for="end-{{ strategy.id }}">По</label><input class="form-control" type="date" id="end-{{ strategy.id }}" name="end_date" required></div>
+            <div class="col-auto align-self-end"><button class="btn btn-outline-primary" type="submit">Запустить бэктест</button></div>
+        </form>
+        {% for run in strategy.runs.all %}
+            <h3 class="h6 mt-3">Прогон {{ run.start_date }} — {{ run.end_date }}</h3>
+            <p class="{% if run.return_percent >= 0 %}text-success{% else %}text-danger{% endif %}">Доходность {{ run.return_percent|floatformat:2 }}%, просадка {{ run.max_drawdown_percent|floatformat:2 }}%, прибыльных сделок: {{ run.winning_trades }}, убыточных: {{ run.losing_trades }}. Конечный капитал: {{ run.final_equity }}.</p>
+            <details><summary>Сделки ({{ run.trades.count }})</summary>
+                <ul>{% for trade in run.trades.all %}<li>{{ trade.executed_at }} — {{ trade.get_side_display }} {{ trade.quantity }} × {{ trade.price }}, комиссия {{ trade.commission }}, P&amp;L {{ trade.realized_pnl }}</li>{% endfor %}</ul>
+            </details>
+        {% empty %}<p>Прогонов пока нет.</p>{% endfor %}
+    </div></section>
+{% empty %}<p>Стратегий пока нет.</p>{% endfor %}
+{% endblock %}

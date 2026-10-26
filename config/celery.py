@@ -15,4 +15,8 @@ app.conf.beat_schedule = {
         "task": "dashboard.tasks.update_last_price",
         "schedule": 10.0,
     },
+    "record-market-history": {
+        "task": "dashboard.tasks.record_market_history",
+        "schedule": 86400.0,
+    },
 }
