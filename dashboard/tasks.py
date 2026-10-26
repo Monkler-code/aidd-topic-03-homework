@@ -1,3 +1,6 @@
+from itertools import islice
+
+from django.utils import timezone
 from redis import Redis
 from redis.exceptions import LockError
 
@@ -6,9 +9,11 @@ from config.settings import CELERY_BROKER_URL, CELERY_TASK_TIME_LIMIT, logger
 from dashboard.models import Share
 from dashboard.services.alerts import trigger_alerts_for_share
 from dashboard.services.history import sync_historical_prices
-from dashboard.services.market_data import get_last_data
+from dashboard.services.market_data import (
+    LAST_PRICE_BATCH_SIZE,
+    get_last_data_for_shares,
+)
 from dashboard.services.tbank import get_invest_client
-from django.utils import timezone
 
 
 def _run_with_lock(name, callback):
@@ -35,24 +40,39 @@ def _run_with_lock(name, callback):
 
 
 def _update_last_prices():
-    shares = list(Share.objects.all())
-    if not shares:
-        return
-
+    updated_count = 0
     with get_invest_client() as client:
-        for share in shares:
+        shares = Share.objects.all().iterator(chunk_size=LAST_PRICE_BATCH_SIZE)
+        while batch := list(islice(shares, LAST_PRICE_BATCH_SIZE)):
             try:
-                last_price, _price_time = get_last_data(share, client=client)
-                is_trend_high = share.last_price is None or last_price > share.last_price
-
-                Share.objects.filter(id=share.id).update(
-                    last_price=last_price,
-                    is_trend_high=is_trend_high,
-                    updated_at=timezone.now(),
-                )
-                trigger_alerts_for_share(share, last_price)
+                prices = get_last_data_for_shares(batch, client=client)
             except Exception:
-                logger.exception("Could not update price for share %s", share.id)
+                logger.exception(
+                    "Could not fetch last prices for batch of %s shares", len(batch)
+                )
+                continue
+
+            for share in batch:
+                quote = prices.get(share.pk)
+                if quote is None:
+                    logger.warning("No last price returned for share %s", share.id)
+                    continue
+                last_price, _price_time = quote
+                try:
+                    is_trend_high = (
+                        share.last_price is None or last_price > share.last_price
+                    )
+
+                    Share.objects.filter(id=share.id).update(
+                        last_price=last_price,
+                        is_trend_high=is_trend_high,
+                        updated_at=timezone.now(),
+                    )
+                    trigger_alerts_for_share(share, last_price)
+                    updated_count += 1
+                except Exception:
+                    logger.exception("Could not update price for share %s", share.id)
+    logger.info("Updated current prices for %s shares", updated_count)
 
 
 @app.task

@@ -138,7 +138,10 @@ class PortfolioSerializer(serializers.ModelSerializer):
         return name
 
     def get_summary(self, portfolio):
-        summary = get_portfolio_summary(portfolio)
+        summaries = self.context.get("portfolio_summaries", {})
+        summary = summaries.get(portfolio.pk)
+        if summary is None:
+            summary = get_portfolio_summary(portfolio)
         summary["holdings"] = [
             {
                 **holding,

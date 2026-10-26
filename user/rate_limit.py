@@ -12,6 +12,10 @@ WINDOW_SECONDS = 300
 MAX_ATTEMPTS = 10
 
 
+class RateLimitUnavailable(Exception):
+    """Raised when the shared authentication throttle cannot be checked."""
+
+
 def _cache_key(request, scope):
     remote_address = request.META.get(
         settings.AUTH_RATE_LIMIT_IP_HEADER, "unknown"
@@ -29,9 +33,9 @@ def allow_attempt(request, scope):
             return cache.incr(key) <= MAX_ATTEMPTS
         except ValueError:
             return cache.add(key, 1, timeout=WINDOW_SECONDS)
-    except Exception:
+    except Exception as exc:
         logger.exception("Could not update authentication rate limit")
-        return True
+        raise RateLimitUnavailable from exc
 
 
 def clear_attempts(request, scope):

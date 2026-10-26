@@ -12,7 +12,7 @@ def _portfolio_transactions(portfolio):
     prefetched = getattr(portfolio, "_prefetched_objects_cache", {})
     if "transactions" in prefetched:
         return list(portfolio.transactions.all())
-    return list(portfolio.transactions.select_related("share").all())
+    return portfolio.transactions.select_related("share").iterator(chunk_size=1000)
 
 
 def calculate_positions(portfolio, transactions=None):
@@ -80,9 +80,66 @@ def record_transaction(
 
 
 def get_portfolio_summary(portfolio):
-    transactions = _portfolio_transactions(portfolio)
-    positions = calculate_positions(portfolio, transactions)
-    shares = {item.share_id: item.share for item in transactions}
+    state = _new_summary_state()
+    for item in _portfolio_transactions(portfolio):
+        _apply_summary_transaction(state, item)
+    return _build_portfolio_summary(state)
+
+
+def get_portfolio_summaries(portfolios):
+    """Build summaries for a page of portfolios using one streaming query."""
+    portfolio_ids = [portfolio.pk for portfolio in portfolios]
+    if not portfolio_ids:
+        return {}
+
+    states = {portfolio_id: _new_summary_state() for portfolio_id in portfolio_ids}
+    transactions = (
+        Transaction.objects.filter(portfolio_id__in=portfolio_ids)
+        .select_related("share")
+        .order_by("portfolio_id", "executed_at", "id")
+        .iterator(chunk_size=1000)
+    )
+    for item in transactions:
+        _apply_summary_transaction(states[item.portfolio_id], item)
+    return {
+        portfolio_id: _build_portfolio_summary(state)
+        for portfolio_id, state in states.items()
+    }
+
+
+def _new_summary_state():
+    return {
+        "positions": {},
+        "shares": {},
+        "realized_pnl": ZERO,
+        "invested": ZERO,
+    }
+
+
+def _apply_summary_transaction(state, item):
+    if item.side == Transaction.Side.BUY:
+        position = state["positions"].setdefault(
+            item.share_id, {"quantity": ZERO, "average_cost": ZERO}
+        )
+        old_cost = position["quantity"] * position["average_cost"]
+        added_cost = item.quantity * item.price + item.commission
+        position["quantity"] += item.quantity
+        position["average_cost"] = (old_cost + added_cost) / position["quantity"]
+        state["shares"][item.share_id] = item.share
+        state["invested"] += added_cost
+    else:
+        state["realized_pnl"] += item.realized_pnl
+        position = state["positions"].get(item.share_id)
+        if position is not None:
+            position["quantity"] -= item.quantity
+            if position["quantity"] <= ZERO:
+                state["positions"].pop(item.share_id, None)
+                state["shares"].pop(item.share_id, None)
+
+
+def _build_portfolio_summary(state):
+    positions = state["positions"]
+    shares = state["shares"]
     holdings = []
     market_value = ZERO
     cost_basis = ZERO
@@ -115,15 +172,7 @@ def get_portfolio_summary(portfolio):
             }
         )
 
-    realized_pnl = sum((item.realized_pnl for item in transactions), ZERO)
-    invested = sum(
-        (
-            item.quantity * item.price + item.commission
-            for item in transactions
-            if item.side == Transaction.Side.BUY
-        ),
-        ZERO,
-    )
+    realized_pnl = state["realized_pnl"]
     total_pnl = realized_pnl + unrealized_pnl
     return {
         "holdings": holdings,
@@ -132,6 +181,8 @@ def get_portfolio_summary(portfolio):
         "realized_pnl": realized_pnl,
         "unrealized_pnl": unrealized_pnl,
         "total_pnl": total_pnl,
-        "return_percent": total_pnl / invested * 100 if invested else ZERO,
+        "return_percent": (
+            total_pnl / state["invested"] * 100 if state["invested"] else ZERO
+        ),
         "unpriced_tickers": unpriced_tickers,
     }

@@ -2,7 +2,7 @@ import logging
 import os
 import secrets
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qsl, unquote, urlparse
 
 from django.core.exceptions import ImproperlyConfigured
 
@@ -25,6 +25,13 @@ CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
 SECURE_HSTS_SECONDS = int(
     os.environ.get("DJANGO_SECURE_HSTS_SECONDS", "31536000" if not DEBUG else "0")
 )
+if os.environ.get("DJANGO_TRUST_X_FORWARDED_PROTO", "false").lower() in {
+    "1",
+    "true",
+    "yes",
+}:
+    # Enable only when a trusted reverse proxy overwrites this header.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 ALLOWED_HOSTS = [
     host.strip()
@@ -52,9 +59,20 @@ INSTALLED_APPS = [
 ]
 
 REST_FRAMEWORK = {
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.LimitOffsetPagination",
+    "DEFAULT_PAGINATION_CLASS": (
+        "dashboard.api.v1.pagination.BoundedLimitOffsetPagination"
+    ),
     "PAGE_SIZE": 100,
     "DEFAULT_FILTER_BACKENDS": ["django_filters.rest_framework.DjangoFilterBackend"],
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "100/hour",
+        "user": "1000/hour",
+        "backtest": "20/hour",
+    },
 }
 
 LOGGING = {
@@ -69,9 +87,12 @@ LOGGING = {
     "handlers": {
         "console": {"class": "logging.StreamHandler", "formatter": "main_format"},
         "file": {
-            "class": "logging.FileHandler",
+            "class": "logging.handlers.RotatingFileHandler",
             "formatter": "main_format",
             "filename": "app.logs",
+            "maxBytes": 10 * 1024 * 1024,
+            "backupCount": 5,
+            "encoding": "utf-8",
         },
     },
     "loggers": {
@@ -124,6 +145,7 @@ if database_url:
                 "HOST": database.hostname or "localhost",
                 "PORT": str(database.port or 5432),
                 "CONN_MAX_AGE": 60,
+                "OPTIONS": dict(parse_qsl(database.query, keep_blank_values=True)),
             }
         }
     elif database.scheme == "sqlite":

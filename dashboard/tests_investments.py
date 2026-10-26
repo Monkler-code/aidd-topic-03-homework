@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework import status
@@ -22,9 +23,11 @@ from dashboard.models import (
 from dashboard.services.alerts import reset_alert, trigger_alerts_for_share
 from dashboard.services.backtesting import run_backtest
 from dashboard.services.history import summarize_prices, sync_historical_prices
+from dashboard.services.market_data import get_last_data_for_shares
 from dashboard.services.portfolio import (
     calculate_positions,
     get_portfolio_summary,
+    get_portfolio_summaries,
     record_transaction,
 )
 
@@ -113,6 +116,20 @@ class InvestmentServiceTests(TestCase):
 
         self.assertEqual(summary["holdings"][0]["share"].ticker, "AAPL")
 
+    def test_streamed_portfolio_page_summaries_match_single_summary(self):
+        record_transaction(
+            portfolio=self.portfolio,
+            share=self.share,
+            side=Transaction.Side.BUY,
+            quantity=Decimal("2"),
+            price=Decimal("10"),
+            commission=Decimal("1"),
+        )
+        summaries = get_portfolio_summaries([self.portfolio])
+        expected = get_portfolio_summary(self.portfolio)
+
+        self.assertEqual(summaries[self.portfolio.pk], expected)
+
     @patch("dashboard.services.history.sync_historical_prices")
     @patch("dashboard.services.graph.render_price_graph", return_value="chart")
     def test_share_graph_uses_local_history_only(self, render_graph, sync_history):
@@ -174,6 +191,23 @@ class InvestmentServiceTests(TestCase):
         self.assertEqual(self.share.historical_prices.count(), 2)
         last.refresh_from_db()
         self.assertEqual(last.close, Decimal("12.500000"))
+
+    def test_market_data_batch_maps_quotes_to_requested_shares(self):
+        quote = SimpleNamespace(
+            figi=self.share.figi,
+            instrument_uid=self.share.uid,
+            price=SimpleNamespace(units=12, nano=500_000_000),
+            time=timezone.now(),
+        )
+        client = SimpleNamespace(
+            market_data=SimpleNamespace(
+                get_last_prices=lambda **kwargs: SimpleNamespace(last_prices=[quote])
+            )
+        )
+
+        prices = get_last_data_for_shares([self.share], client)
+
+        self.assertEqual(prices[self.share.pk][0], Decimal("12.5"))
 
     def test_backtest_uses_daily_prices_and_persists_trade_journal(self):
         day_one = date(2025, 1, 1)
@@ -251,6 +285,35 @@ class InvestmentApiTests(APITestCase):
         response = self.client.get("/api/v1/watchlists/")
         self.assertEqual(response.data["count"], 0)
 
+    def test_watchlist_unique_constraint_race_returns_conflict(self):
+        self.client.force_authenticate(self.user)
+        with patch(
+            "dashboard.api.v1.investment_serializers.WatchlistSerializer.create",
+            side_effect=IntegrityError("concurrent duplicate"),
+        ):
+            response = self.client.post(
+                "/api/v1/watchlists/", {"name": "Tech"}, format="json"
+            )
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+
+    def test_share_list_caps_client_requested_page_size(self):
+        Share.objects.bulk_create(
+            [
+                Share(
+                    figi=f"FIGI{i}",
+                    isin=f"ISIN{i}",
+                    name=f"Share {i}",
+                    ticker=f"T{i}",
+                    currency="usd",
+                    uid=f"UID{i}",
+                )
+                for i in range(501)
+            ]
+        )
+        response = self.client.get("/api/v1/shares/?limit=100000")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["results"]), 500)
+
     def test_alert_create_trigger_and_reset_api(self):
         self.client.force_authenticate(self.user)
         response = self.client.post(
@@ -308,7 +371,9 @@ class InvestmentApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         response = self.client.get(f"/api/v1/portfolios/{portfolio_id}/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["summary"]["holdings"][0]["share"]["ticker"], "AAPL")
+        self.assertEqual(
+            response.data["summary"]["holdings"][0]["share"]["ticker"], "AAPL"
+        )
 
         response = self.client.post(
             "/api/v1/transactions/",
@@ -323,6 +388,27 @@ class InvestmentApiTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_portfolio_list_preserves_summary_response(self):
+        portfolio = Portfolio.objects.create(owner=self.user, name="List summary")
+        record_transaction(
+            portfolio=portfolio,
+            share=self.share,
+            side=Transaction.Side.BUY,
+            quantity=Decimal("2"),
+            price=Decimal("80"),
+        )
+        self.client.force_authenticate(self.user)
+
+        response = self.client.get("/api/v1/portfolios/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        listed = next(
+            item for item in response.data["results"] if item["id"] == portfolio.pk
+        )
+        self.assertEqual(
+            listed["summary"]["holdings"][0]["share"]["ticker"], "AAPL"
+        )
 
     def test_history_api_period_validation_and_results(self):
         make_candle(self.share, date.today() - timedelta(days=1), "90")

@@ -1,8 +1,10 @@
+from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
-from django.db import IntegrityError
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import APIException
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from dashboard.api.v1.investment_serializers import (
@@ -27,30 +29,48 @@ from dashboard.models import (
 from dashboard.services.alerts import reset_alert
 from dashboard.services.backtesting import run_backtest
 from dashboard.services.history import PERIOD_DAYS, prices_for_period, summarize_prices
+from dashboard.services.portfolio import get_portfolio_summaries
+
+
+class IntegrityConflict(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = "Запись конфликтует с существующими данными."
+    default_code = "conflict"
 
 
 class OwnerModelViewSet(viewsets.ModelViewSet):
     permission_classes = (permissions.IsAuthenticated,)
 
 
-class WatchlistViewSet(OwnerModelViewSet):
+class ConflictOnIntegrityViewSet(OwnerModelViewSet):
+    def _save_with_conflict_handling(self, serializer, **kwargs):
+        try:
+            with transaction.atomic():
+                serializer.save(**kwargs)
+        except IntegrityError as exc:
+            raise IntegrityConflict from exc
+
+    def perform_create(self, serializer):
+        self._save_with_conflict_handling(serializer, owner=self.request.user)
+
+    def perform_update(self, serializer):
+        self._save_with_conflict_handling(serializer)
+
+
+class WatchlistViewSet(ConflictOnIntegrityViewSet):
     serializer_class = WatchlistSerializer
 
     def get_queryset(self):
-        return Watchlist.objects.filter(owner=self.request.user).prefetch_related("shares")
+        return Watchlist.objects.filter(owner=self.request.user).prefetch_related(
+            "shares"
+        )
 
-    def perform_create(self, serializer):
-        serializer.save(owner=self.request.user)
 
-
-class PriceAlertViewSet(OwnerModelViewSet):
+class PriceAlertViewSet(ConflictOnIntegrityViewSet):
     serializer_class = PriceAlertSerializer
 
     def get_queryset(self):
         return PriceAlert.objects.filter(owner=self.request.user).select_related("share")
-
-    def perform_create(self, serializer):
-        serializer.save(owner=self.request.user)
 
     @action(detail=True, methods=("post",))
     def reset(self, request, pk=None):
@@ -65,16 +85,39 @@ class PriceAlertViewSet(OwnerModelViewSet):
         return Response(self.get_serializer(alert).data)
 
 
-class PortfolioViewSet(OwnerModelViewSet):
+class PortfolioViewSet(ConflictOnIntegrityViewSet):
     serializer_class = PortfolioSerializer
 
     def get_queryset(self):
-        return Portfolio.objects.filter(owner=self.request.user).prefetch_related(
-            "transactions__share"
-        )
+        return Portfolio.objects.filter(owner=self.request.user)
 
-    def perform_create(self, serializer):
-        serializer.save(owner=self.request.user)
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is None:
+            portfolios = list(queryset)
+            summaries = get_portfolio_summaries(portfolios)
+            serializer = self.get_serializer(
+                portfolios,
+                many=True,
+                context={
+                    **self.get_serializer_context(),
+                    "portfolio_summaries": summaries,
+                },
+            )
+            return Response(serializer.data)
+
+        portfolios = list(page)
+        summaries = get_portfolio_summaries(portfolios)
+        serializer = self.get_serializer(
+            portfolios,
+            many=True,
+            context={
+                **self.get_serializer_context(),
+                "portfolio_summaries": summaries,
+            },
+        )
+        return self.get_paginated_response(serializer.data)
 
 
 class TransactionViewSet(
@@ -122,6 +165,13 @@ class TradingStrategyViewSet(OwnerModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
+
+    def get_throttles(self):
+        throttles = super().get_throttles()
+        if getattr(self, "action", None) == "run":
+            self.throttle_scope = "backtest"
+            throttles.append(ScopedRateThrottle())
+        return throttles
 
     @action(detail=True, methods=("post",))
     def run(self, request, pk=None):

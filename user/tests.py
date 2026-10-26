@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -50,6 +52,18 @@ class AuthenticationTests(TestCase):
     def test_login_rejects_missing_fields_without_raising(self):
         response = self.client.post(reverse("user:auth"), {})
         self.assertEqual(response.status_code, 200)
+
+    @patch("user.rate_limit.cache.add", side_effect=OSError("cache unavailable"))
+    @patch("user.rate_limit.logger.exception")
+    def test_authentication_endpoints_fail_closed_when_rate_limit_cache_is_down(
+        self, _logger_exception, _cache_add
+    ):
+        with self.assertLogs("django.request", level="ERROR"):
+            for url in (reverse("user:auth"), reverse("user:registration")):
+                with self.subTest(url=url):
+                    response = self.client.post(url, {})
+                    self.assertEqual(response.status_code, 503)
+                    self.assertEqual(response.headers["Retry-After"], "60")
 
     def test_login_accepts_legacy_mixed_case_email(self):
         user = get_user_model().objects.create_user(

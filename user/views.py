@@ -5,7 +5,21 @@ from django.shortcuts import redirect, render
 from django.views.generic import View
 
 from .forms import AuthForm, RegistrationForm
-from .rate_limit import allow_attempt, clear_attempts
+from .rate_limit import RateLimitUnavailable, allow_attempt, clear_attempts
+
+
+def _rate_limit_response(request, scope):
+    try:
+        allowed = allow_attempt(request, scope)
+    except RateLimitUnavailable:
+        return HttpResponse(
+            "Сервис авторизации временно недоступен. Попробуйте позже.",
+            status=503,
+            headers={"Retry-After": "60"},
+        )
+    if not allowed:
+        return HttpResponse("Слишком много попыток. Попробуйте позже.", status=429)
+    return None
 
 
 class AuthView(View):
@@ -17,10 +31,9 @@ class AuthView(View):
 
     @staticmethod
     def post(request):
-        if not allow_attempt(request, "login"):
-            return HttpResponse(
-                "Слишком много попыток. Попробуйте позже.", status=429
-            )
+        rate_limit_response = _rate_limit_response(request, "login")
+        if rate_limit_response:
+            return rate_limit_response
 
         form = AuthForm(request.POST)
         if not form.is_valid():
@@ -61,10 +74,9 @@ class RegistrationView(View):
 
     @staticmethod
     def post(request):
-        if not allow_attempt(request, "registration"):
-            return HttpResponse(
-                "Слишком много попыток. Попробуйте позже.", status=429
-            )
+        rate_limit_response = _rate_limit_response(request, "registration")
+        if rate_limit_response:
+            return rate_limit_response
 
         form = RegistrationForm(request.POST)
         if form.is_valid():
