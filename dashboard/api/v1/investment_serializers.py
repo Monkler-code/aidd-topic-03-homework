@@ -253,6 +253,10 @@ class TradingStrategySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"commission_percent": "Комиссия не может быть отрицательной."}
             )
+        if commission is not None and commission > 100:
+            raise serializers.ValidationError(
+                {"commission_percent": "Комиссия не может превышать 100%."}
+            )
         if capital is not None and capital <= 0:
             raise serializers.ValidationError(
                 {"initial_capital": "Начальный капитал должен быть больше нуля."}

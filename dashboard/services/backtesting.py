@@ -28,6 +28,8 @@ def run_backtest(strategy, start_date, end_date):
         raise ValueError("Конечная дата не может быть в будущем.")
     if strategy.lookback_days > MAX_LOOKBACK_DAYS:
         raise ValueError("Окно анализа не может превышать 3650 дней.")
+    if strategy.commission_percent > ONE_HUNDRED:
+        raise ValueError("Комиссия не может превышать 100%.")
 
     try:
         history_start = start_date - timedelta(days=strategy.lookback_days)
@@ -62,7 +64,6 @@ def run_backtest(strategy, start_date, end_date):
     cash = strategy.initial_capital
     initial_capital = strategy.initial_capital
     quantity = ZERO
-    average_entry = ZERO
     entry_cost = ZERO
     fee_rate = strategy.commission_percent / ONE_HUNDRED
     peak_equity = initial_capital
@@ -86,7 +87,6 @@ def run_backtest(strategy, start_date, end_date):
                     notional = buy_quantity * price
                     commission = notional * fee_rate
                     entry_cost = notional + commission
-                    average_entry = entry_cost / buy_quantity
                     quantity = buy_quantity
                     cash -= entry_cost
                     trade_rows.append(
@@ -100,10 +100,18 @@ def run_backtest(strategy, start_date, end_date):
                     )
 
         elif quantity > ZERO:
-            sell_threshold = average_entry * (
-                ONE_HUNDRED + strategy.sell_profit_percent
-            ) / ONE_HUNDRED
-            if price >= sell_threshold:
+            net_proceeds_factor = ONE_HUNDRED - strategy.commission_percent
+            target_net_proceeds = (
+                entry_cost
+                * (ONE_HUNDRED + strategy.sell_profit_percent)
+                / ONE_HUNDRED
+            )
+            sell_threshold = (
+                target_net_proceeds * ONE_HUNDRED / (quantity * net_proceeds_factor)
+                if net_proceeds_factor > ZERO
+                else None
+            )
+            if sell_threshold is not None and price >= sell_threshold:
                 notional = quantity * price
                 commission = notional * fee_rate
                 realized = notional - commission - entry_cost
@@ -120,7 +128,6 @@ def run_backtest(strategy, start_date, end_date):
                 )
                 closed_trade_results.append(realized)
                 quantity = ZERO
-                average_entry = ZERO
                 entry_cost = ZERO
 
         equity = cash + quantity * price

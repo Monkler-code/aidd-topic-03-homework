@@ -20,5 +20,6 @@ app.conf.beat_schedule = {
     "record-market-history": {
         "task": "dashboard.tasks.record_market_history",
         "schedule": 86400.0,
+        "options": {"expires": 86400.0},
     },
 }

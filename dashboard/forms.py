@@ -71,7 +71,10 @@ class TradingStrategyForm(forms.ModelForm):
         )
 
     def clean_commission_percent(self):
-        return self.cleaned_data.get("commission_percent") or Decimal("0")
+        commission = self.cleaned_data.get("commission_percent") or Decimal("0")
+        if commission > Decimal("100"):
+            raise forms.ValidationError("Комиссия не может превышать 100%.")
+        return commission
 
     def clean_lookback_days(self):
         lookback_days = self.cleaned_data["lookback_days"]

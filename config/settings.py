@@ -33,13 +33,18 @@ if os.environ.get("DJANGO_TRUST_X_FORWARDED_PROTO", "false").lower() in {
     # Enable only when a trusted reverse proxy overwrites this header.
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
+allowed_hosts_setting = os.environ.get("DJANGO_ALLOWED_HOSTS")
+if allowed_hosts_setting is None:
+    if not DEBUG:
+        raise ImproperlyConfigured(
+            "Set DJANGO_ALLOWED_HOSTS when DEBUG is disabled"
+        )
+    allowed_hosts_setting = "localhost,127.0.0.1,testserver"
 ALLOWED_HOSTS = [
-    host.strip()
-    for host in os.environ.get(
-        "DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,testserver"
-    ).split(",")
-    if host.strip()
+    host.strip() for host in allowed_hosts_setting.split(",") if host.strip()
 ]
+if not ALLOWED_HOSTS:
+    raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must contain at least one host")
 AUTH_RATE_LIMIT_IP_HEADER = os.environ.get(
     "DJANGO_AUTH_RATE_LIMIT_IP_HEADER", "REMOTE_ADDR"
 )
@@ -59,6 +64,10 @@ INSTALLED_APPS = [
 ]
 
 REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+        "user.api_authentication.RateLimitedBasicAuthentication",
+    ],
     "DEFAULT_PAGINATION_CLASS": (
         "dashboard.api.v1.pagination.BoundedLimitOffsetPagination"
     ),

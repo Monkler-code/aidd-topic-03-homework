@@ -21,7 +21,7 @@ def _get_last_data(share, client):
         raise ValueError(f"No last price returned for share {share.figi}")
     last_price = response.last_prices[0]
     logger.debug("Got last data for share with id %s", share.id)
-    return quotation_to_decimal(last_price.price), last_price.time
+    return _positive_price(last_price.price), last_price.time
 
 
 def get_last_data_for_shares(shares, client):
@@ -39,24 +39,33 @@ def get_last_data_for_shares(shares, client):
 
     result = {}
     for last_price in response.last_prices:
+        try:
+            price = _positive_price(last_price.price)
+        except ValueError:
+            continue
         for identifier in (
             getattr(last_price, "figi", None),
             getattr(last_price, "instrument_uid", None),
         ):
             share = shares_by_identifier.get(identifier)
             if share is not None:
-                result[share.pk] = (
-                    quotation_to_decimal(last_price.price),
-                    last_price.time,
-                )
+                result[share.pk] = (price, last_price.time)
                 break
     if len(shares) == 1 and not result and response.last_prices:
         last_price = response.last_prices[0]
-        result[shares[0].pk] = (
-            quotation_to_decimal(last_price.price),
-            last_price.time,
-        )
+        try:
+            price = _positive_price(last_price.price)
+        except ValueError:
+            return result
+        result[shares[0].pk] = (price, last_price.time)
     return result
+
+
+def _positive_price(quotation):
+    price = quotation_to_decimal(quotation)
+    if price <= 0:
+        raise ValueError("Market data returned a non-positive price")
+    return price
 
 
 def get_historical_candles(share, days=365):

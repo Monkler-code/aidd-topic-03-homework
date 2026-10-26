@@ -9,6 +9,8 @@ from dashboard.models import PriceAlert
 def trigger_alerts_for_share(share, current_price):
     """Atomically mark matching active alerts as fired exactly once."""
     price = Decimal(str(current_price))
+    if price <= 0:
+        raise ValueError("Цена акции должна быть больше нуля.")
     now = timezone.now()
     matching_conditions = (
         Q(direction=PriceAlert.Direction.ABOVE, target_price__lte=price)
