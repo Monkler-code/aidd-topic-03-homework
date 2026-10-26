@@ -1,6 +1,6 @@
 from bisect import bisect_right
 from datetime import datetime, time, timedelta
-from decimal import Decimal, ROUND_FLOOR
+from decimal import Decimal, DecimalException, ROUND_FLOOR, localcontext
 
 from django.db import transaction as db_transaction
 from django.utils import timezone
@@ -9,17 +9,45 @@ from dashboard.models import HistoricalPrice, StrategyRun, StrategyTrade
 
 ZERO = Decimal("0")
 ONE_HUNDRED = Decimal("100")
-SIX_PLACES = Decimal("0.000001")
 MAX_BACKTEST_DAYS = 3650
 MAX_LOOKBACK_DAYS = 3650
 
 
-def _money(value):
-    return value.quantize(SIX_PLACES)
+def _stored_decimal(value, model, field_name, description):
+    """Round a calculated value to its database field and reject overflow."""
+    field = model._meta.get_field(field_name)
+    value = Decimal(value)
+    if not value.is_finite():
+        raise ValueError(f"{description} не помещается в допустимый диапазон.")
+
+    quantum = Decimal(1).scaleb(-field.decimal_places)
+    precision = max(
+        50,
+        field.max_digits + 2,
+        len(value.as_tuple().digits) + field.decimal_places + 2,
+        value.adjusted() + field.decimal_places + 2,
+    )
+    with localcontext() as context:
+        context.prec = precision
+        rounded = value.quantize(quantum)
+
+    max_value = Decimal(10) ** (field.max_digits - field.decimal_places)
+    if abs(rounded) >= max_value:
+        raise ValueError(f"{description} превышает допустимый диапазон хранения.")
+    return rounded
 
 
 @db_transaction.atomic
 def run_backtest(strategy, start_date, end_date):
+    try:
+        return _run_backtest(strategy, start_date, end_date)
+    except (DecimalException, OverflowError) as exc:
+        raise ValueError(
+            "Результаты симуляции превышают допустимый числовой диапазон."
+        ) from exc
+
+
+def _run_backtest(strategy, start_date, end_date):
     if start_date > end_date:
         raise ValueError("Начальная дата должна быть не позже конечной.")
     if (end_date - start_date).days > MAX_BACKTEST_DAYS:
@@ -84,8 +112,19 @@ def run_backtest(strategy, start_date, end_date):
                 affordable = cash / (price * (Decimal("1") + fee_rate))
                 buy_quantity = affordable.to_integral_value(rounding=ROUND_FLOOR)
                 if buy_quantity > ZERO:
+                    buy_quantity = _stored_decimal(
+                        buy_quantity,
+                        StrategyTrade,
+                        "quantity",
+                        "Количество сделки",
+                    )
                     notional = buy_quantity * price
-                    commission = notional * fee_rate
+                    commission = _stored_decimal(
+                        notional * fee_rate,
+                        StrategyTrade,
+                        "commission",
+                        "Комиссия сделки",
+                    )
                     entry_cost = notional + commission
                     quantity = buy_quantity
                     cash -= entry_cost
@@ -94,8 +133,10 @@ def run_backtest(strategy, start_date, end_date):
                             side=StrategyTrade.Side.BUY,
                             executed_at=row.captured_at,
                             quantity=buy_quantity,
-                            price=price,
-                            commission=_money(commission),
+                            price=_stored_decimal(
+                                price, StrategyTrade, "price", "Цена сделки"
+                            ),
+                            commission=commission,
                         )
                     )
 
@@ -113,17 +154,30 @@ def run_backtest(strategy, start_date, end_date):
             )
             if sell_threshold is not None and price >= sell_threshold:
                 notional = quantity * price
-                commission = notional * fee_rate
+                commission = _stored_decimal(
+                    notional * fee_rate,
+                    StrategyTrade,
+                    "commission",
+                    "Комиссия сделки",
+                )
                 realized = notional - commission - entry_cost
+                realized = _stored_decimal(
+                    realized,
+                    StrategyTrade,
+                    "realized_pnl",
+                    "Прибыль или убыток сделки",
+                )
                 cash += notional - commission
                 trade_rows.append(
                     StrategyTrade(
                         side=StrategyTrade.Side.SELL,
                         executed_at=row.captured_at,
                         quantity=quantity,
-                        price=price,
-                        commission=_money(commission),
-                        realized_pnl=_money(realized),
+                        price=_stored_decimal(
+                            price, StrategyTrade, "price", "Цена сделки"
+                        ),
+                        commission=commission,
+                        realized_pnl=realized,
                     )
                 )
                 closed_trade_results.append(realized)
@@ -141,17 +195,30 @@ def run_backtest(strategy, start_date, end_date):
     last_row = trading_rows[-1]
     if quantity > ZERO:
         notional = quantity * last_row.close
-        commission = notional * fee_rate
+        commission = _stored_decimal(
+            notional * fee_rate,
+            StrategyTrade,
+            "commission",
+            "Комиссия сделки",
+        )
         realized = notional - commission - entry_cost
+        realized = _stored_decimal(
+            realized,
+            StrategyTrade,
+            "realized_pnl",
+            "Прибыль или убыток сделки",
+        )
         cash += notional - commission
         trade_rows.append(
             StrategyTrade(
                 side=StrategyTrade.Side.SELL,
                 executed_at=last_row.captured_at,
                 quantity=quantity,
-                price=last_row.close,
-                commission=_money(commission),
-                realized_pnl=_money(realized),
+                price=_stored_decimal(
+                    last_row.close, StrategyTrade, "price", "Цена сделки"
+                ),
+                commission=commission,
+                realized_pnl=realized,
             )
         )
         closed_trade_results.append(realized)
@@ -166,14 +233,43 @@ def run_backtest(strategy, start_date, end_date):
     return_percent = (
         (final_equity - initial_capital) / initial_capital * ONE_HUNDRED
     )
+    initial_capital = _stored_decimal(
+        initial_capital, StrategyRun, "initial_capital", "Начальный капитал"
+    )
+    final_equity = _stored_decimal(
+        final_equity, StrategyRun, "final_equity", "Конечный капитал"
+    )
+    return_percent = _stored_decimal(
+        return_percent, StrategyRun, "return_percent", "Доходность"
+    )
+    max_drawdown = _stored_decimal(
+        max_drawdown,
+        StrategyRun,
+        "max_drawdown_percent",
+        "Максимальная просадка",
+    )
     run = StrategyRun.objects.create(
         strategy=strategy,
+        strategy_snapshot={
+            "strategy_name": strategy.name,
+            "share": {
+                "id": strategy.share_id,
+                "ticker": strategy.share.ticker,
+                "name": strategy.share.name,
+                "currency": strategy.share.currency,
+            },
+            "buy_drop_percent": str(strategy.buy_drop_percent),
+            "lookback_days": strategy.lookback_days,
+            "sell_profit_percent": str(strategy.sell_profit_percent),
+            "commission_percent": str(strategy.commission_percent),
+            "initial_capital": str(initial_capital),
+        },
         start_date=start_date,
         end_date=end_date,
-        initial_capital=_money(initial_capital),
-        final_equity=_money(final_equity),
-        return_percent=_money(return_percent),
-        max_drawdown_percent=_money(max_drawdown),
+        initial_capital=initial_capital,
+        final_equity=final_equity,
+        return_percent=return_percent,
+        max_drawdown_percent=max_drawdown,
         winning_trades=sum(result > ZERO for result in closed_trade_results),
         losing_trades=sum(result < ZERO for result in closed_trade_results),
     )

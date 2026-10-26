@@ -122,6 +122,7 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = "config.urls"
+LOGIN_URL = "user:auth"
 
 TEMPLATES = [
     {
@@ -197,7 +198,7 @@ USE_I18N = True
 
 USE_TZ = True
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -214,6 +215,16 @@ if CACHE_URL is None and not DEBUG and CELERY_BROKER_URL.startswith(
     ("redis://", "rediss://")
 ):
     CACHE_URL = CELERY_BROKER_URL
+
+TASK_LOCK_REDIS_URL = os.environ.get("TASK_LOCK_REDIS_URL") or CACHE_URL
+if TASK_LOCK_REDIS_URL is None and CELERY_BROKER_URL.startswith(
+    ("redis://", "rediss://")
+):
+    TASK_LOCK_REDIS_URL = CELERY_BROKER_URL
+if TASK_LOCK_REDIS_URL and not TASK_LOCK_REDIS_URL.startswith(
+    ("redis://", "rediss://")
+):
+    raise ImproperlyConfigured("TASK_LOCK_REDIS_URL must use redis or rediss scheme")
 
 if CACHE_URL:
     if not CACHE_URL.startswith(("redis://", "rediss://")):

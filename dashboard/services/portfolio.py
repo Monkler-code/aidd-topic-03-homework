@@ -173,7 +173,17 @@ def _build_portfolio_summary(state):
         )
 
     realized_pnl = state["realized_pnl"]
-    total_pnl = realized_pnl + unrealized_pnl
+    has_unpriced_positions = bool(unpriced_tickers)
+    if has_unpriced_positions:
+        market_value = None
+        unrealized_pnl = None
+        total_pnl = None
+        return_percent = None
+    else:
+        total_pnl = realized_pnl + unrealized_pnl
+        return_percent = (
+            total_pnl / state["invested"] * 100 if state["invested"] else ZERO
+        )
     return {
         "holdings": holdings,
         "market_value": market_value,
@@ -181,8 +191,6 @@ def _build_portfolio_summary(state):
         "realized_pnl": realized_pnl,
         "unrealized_pnl": unrealized_pnl,
         "total_pnl": total_pnl,
-        "return_percent": (
-            total_pnl / state["invested"] * 100 if state["invested"] else ZERO
-        ),
+        "return_percent": return_percent,
         "unpriced_tickers": unpriced_tickers,
     }

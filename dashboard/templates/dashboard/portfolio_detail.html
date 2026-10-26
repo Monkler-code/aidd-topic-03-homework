@@ -4,11 +4,15 @@
 
 {% block content %}
 <h1>{{ portfolio.name }}</h1>
-<p>Рыночная стоимость: {{ summary.market_value }} {{ portfolio.currency }} · Себестоимость: {{ summary.cost_basis }} {{ portfolio.currency }}</p>
-<p>Реализованный P&amp;L: {{ summary.realized_pnl }} · Нереализованный P&amp;L: {{ summary.unrealized_pnl }}</p>
+<p>Рыночная стоимость: {{ summary.market_value|default_if_none:"—" }} {{ portfolio.currency }} · Себестоимость: {{ summary.cost_basis }} {{ portfolio.currency }}</p>
+<p>Реализованный P&amp;L: {{ summary.realized_pnl }} · Нереализованный P&amp;L: {{ summary.unrealized_pnl|default_if_none:"—" }}</p>
+{% if summary.total_pnl != None %}
 <p class="{% if summary.total_pnl >= 0 %}text-success{% else %}text-danger{% endif %}">
     Общий P&amp;L: {{ summary.total_pnl }} {{ portfolio.currency }} (P&amp;L к общей сумме покупок: {{ summary.return_percent|floatformat:2 }}%)
 </p>
+{% else %}
+<p>Общий P&amp;L: — {{ portfolio.currency }} (P&amp;L к общей сумме покупок: —)</p>
+{% endif %}
 {% if summary.unpriced_tickers %}<p class="text-warning">Нет текущей цены: {{ summary.unpriced_tickers|join:", " }}</p>{% endif %}
 
 <h2 class="h4">Позиции</h2>

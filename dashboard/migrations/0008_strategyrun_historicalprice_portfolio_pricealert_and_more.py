@@ -399,7 +399,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="historicalprice",
             constraint=models.CheckConstraint(
-                check=models.Q(("close__gt", 0)), name="historical_close_positive"
+                condition=models.Q(("close__gt", 0)), name="historical_close_positive"
             ),
         ),
         migrations.AddConstraint(
@@ -411,7 +411,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="pricealert",
             constraint=models.CheckConstraint(
-                check=models.Q(("target_price__gt", 0)),
+                condition=models.Q(("target_price__gt", 0)),
                 name="alert_target_price_positive",
             ),
         ),
@@ -426,7 +426,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="tradingstrategy",
             constraint=models.CheckConstraint(
-                check=models.Q(
+                condition=models.Q(
                     ("buy_drop_percent__gt", 0), ("buy_drop_percent__lte", 100)
                 ),
                 name="strategy_drop_percent_range",
@@ -435,41 +435,41 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="tradingstrategy",
             constraint=models.CheckConstraint(
-                check=models.Q(("sell_profit_percent__gt", 0)),
+                condition=models.Q(("sell_profit_percent__gt", 0)),
                 name="strategy_profit_positive",
             ),
         ),
         migrations.AddConstraint(
             model_name="tradingstrategy",
             constraint=models.CheckConstraint(
-                check=models.Q(("commission_percent__gte", 0)),
+                condition=models.Q(("commission_percent__gte", 0)),
                 name="strategy_commission_nonnegative",
             ),
         ),
         migrations.AddConstraint(
             model_name="tradingstrategy",
             constraint=models.CheckConstraint(
-                check=models.Q(("initial_capital__gt", 0)),
+                condition=models.Q(("initial_capital__gt", 0)),
                 name="strategy_capital_positive",
             ),
         ),
         migrations.AddConstraint(
             model_name="transaction",
             constraint=models.CheckConstraint(
-                check=models.Q(("quantity__gt", 0)),
+                condition=models.Q(("quantity__gt", 0)),
                 name="transaction_quantity_positive",
             ),
         ),
         migrations.AddConstraint(
             model_name="transaction",
             constraint=models.CheckConstraint(
-                check=models.Q(("price__gt", 0)), name="transaction_price_positive"
+                condition=models.Q(("price__gt", 0)), name="transaction_price_positive"
             ),
         ),
         migrations.AddConstraint(
             model_name="transaction",
             constraint=models.CheckConstraint(
-                check=models.Q(("commission__gte", 0)),
+                condition=models.Q(("commission__gte", 0)),
                 name="transaction_commission_nonnegative",
             ),
         ),

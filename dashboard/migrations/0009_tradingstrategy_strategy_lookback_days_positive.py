@@ -15,7 +15,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="tradingstrategy",
             constraint=models.CheckConstraint(
-                check=models.Q(("lookback_days__gt", 0)),
+                condition=models.Q(("lookback_days__gt", 0)),
                 name="strategy_lookback_days_positive",
             ),
         ),

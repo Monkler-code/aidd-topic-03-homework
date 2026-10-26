@@ -39,7 +39,11 @@ def allow_attempt(request, scope):
 
 
 def clear_attempts(request, scope):
+    key = _cache_key(request, scope)
     try:
-        cache.delete(_cache_key(request, scope))
-    except Exception:
+        cache.delete(key)
+    except Exception as exc:
         logger.exception("Could not clear authentication rate limit")
+        raise RateLimitUnavailable from exc
+
+

@@ -12,8 +12,9 @@ from dashboard.models import (
     Watchlist,
     WatchlistItem,
 )
-from dashboard.services.portfolio import get_portfolio_summary
+from dashboard.services.alerts import delete_alerts_without_watchlist_membership
 from dashboard.services.backtesting import MAX_BACKTEST_DAYS, MAX_LOOKBACK_DAYS
+from dashboard.services.portfolio import get_portfolio_summary
 
 
 class WatchlistSerializer(serializers.ModelSerializer):
@@ -53,10 +54,17 @@ class WatchlistSerializer(serializers.ModelSerializer):
         shares = validated_data.pop("share_ids", None)
         instance = super().update(instance, validated_data)
         if shares is not None:
+            previous_share_ids = set(
+                instance.items.values_list("share_id", flat=True)
+            )
+            new_share_ids = {share.pk for share in shares}
             instance.items.all().delete()
             WatchlistItem.objects.bulk_create(
                 [WatchlistItem(watchlist=instance, share=share) for share in shares],
                 ignore_conflicts=True,
+            )
+            delete_alerts_without_watchlist_membership(
+                instance.owner_id, previous_share_ids - new_share_ids
             )
         return instance
 
@@ -137,6 +145,17 @@ class PortfolioSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Название портфеля уже используется.")
         return name
 
+    def validate_currency(self, currency):
+        if (
+            self.instance
+            and currency.upper() != self.instance.currency.upper()
+            and self.instance.transactions.exists()
+        ):
+            raise serializers.ValidationError(
+                "Нельзя менять валюту портфеля после добавления сделок."
+            )
+        return currency
+
     def get_summary(self, portfolio):
         summaries = self.context.get("portfolio_summaries", {})
         summary = summaries.get(portfolio.pk)
@@ -160,6 +179,17 @@ class PortfolioSerializer(serializers.ModelSerializer):
 class TransactionSerializer(serializers.ModelSerializer):
     portfolio = serializers.PrimaryKeyRelatedField(queryset=Portfolio.objects.all())
     share_ticker = serializers.CharField(source="share.ticker", read_only=True)
+
+    def get_fields(self):
+        fields = super().get_fields()
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            fields["portfolio"].queryset = Portfolio.objects.filter(
+                owner=request.user
+            )
+        else:
+            fields["portfolio"].queryset = Portfolio.objects.none()
+        return fields
 
     class Meta:
         model = Transaction
@@ -295,12 +325,14 @@ class StrategyTradeSerializer(serializers.ModelSerializer):
 
 class StrategyRunSerializer(serializers.ModelSerializer):
     trades = StrategyTradeSerializer(many=True, read_only=True)
+    strategy_snapshot = serializers.JSONField(read_only=True)
 
     class Meta:
         model = StrategyRun
         fields = (
             "id",
             "strategy",
+            "strategy_snapshot",
             "start_date",
             "end_date",
             "initial_capital",
@@ -311,4 +343,11 @@ class StrategyRunSerializer(serializers.ModelSerializer):
             "losing_trades",
             "completed_at",
             "trades",
+        )
+
+
+class StrategyRunListSerializer(StrategyRunSerializer):
+    class Meta(StrategyRunSerializer.Meta):
+        fields = tuple(
+            field for field in StrategyRunSerializer.Meta.fields if field != "trades"
         )

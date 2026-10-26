@@ -1,5 +1,6 @@
 from datetime import datetime, time, timedelta
 from decimal import Decimal
+from math import ceil
 
 from django.utils import timezone
 from plotly.graph_objs import Scatter
@@ -11,9 +12,24 @@ from dashboard.services.tbank import quotation_to_decimal
 
 PERIOD_DAYS = {"day": 1, "week": 7, "month": 30, "year": 365}
 SIX_PLACES = Decimal("0.000001")
+INITIAL_HISTORY_DAYS = 365
+HISTORY_OVERLAP_DAYS = 2
 
 
-def sync_historical_prices(share, days=365):
+def sync_historical_prices(share, days=None):
+    if days is None:
+        last_captured_at = (
+            HistoricalPrice.objects.filter(share=share)
+            .order_by("-captured_at")
+            .values_list("captured_at", flat=True)
+            .first()
+        )
+        if last_captured_at is None:
+            days = INITIAL_HISTORY_DAYS
+        else:
+            fetch_from = last_captured_at - timedelta(days=HISTORY_OVERLAP_DAYS)
+            days = max(1, ceil((timezone.now() - fetch_from).total_seconds() / 86400))
+
     candles = get_historical_candles(share, days=days)
     records = [
         HistoricalPrice(

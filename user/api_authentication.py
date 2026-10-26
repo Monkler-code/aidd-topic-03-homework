@@ -32,5 +32,8 @@ class RateLimitedBasicAuthentication(BasicAuthentication):
 
         result = super().authenticate(request)
         if result is not None:
-            clear_attempts(request, "login")
+            try:
+                clear_attempts(request, "login")
+            except RateLimitUnavailable as exc:
+                raise RateLimitCacheUnavailable() from exc
         return result

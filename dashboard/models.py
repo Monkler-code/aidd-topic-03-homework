@@ -88,7 +88,7 @@ class PriceAlert(models.Model):
         ordering = ("status", "created_at")
         constraints = [
             models.CheckConstraint(
-                check=Q(target_price__gt=0), name="alert_target_price_positive"
+                condition=Q(target_price__gt=0), name="alert_target_price_positive"
             ),
             models.UniqueConstraint(
                 fields=("owner", "share", "direction", "target_price"),
@@ -139,9 +139,9 @@ class Transaction(models.Model):
     class Meta:
         ordering = ("executed_at", "id")
         constraints = [
-            models.CheckConstraint(check=Q(quantity__gt=0), name="transaction_quantity_positive"),
-            models.CheckConstraint(check=Q(price__gt=0), name="transaction_price_positive"),
-            models.CheckConstraint(check=Q(commission__gte=0), name="transaction_commission_nonnegative"),
+            models.CheckConstraint(condition=Q(quantity__gt=0), name="transaction_quantity_positive"),
+            models.CheckConstraint(condition=Q(price__gt=0), name="transaction_price_positive"),
+            models.CheckConstraint(condition=Q(commission__gte=0), name="transaction_commission_nonnegative"),
         ]
 
 
@@ -163,7 +163,7 @@ class HistoricalPrice(models.Model):
             models.UniqueConstraint(
                 fields=("share", "captured_at"), name="uniq_share_candle_time"
             ),
-            models.CheckConstraint(check=Q(close__gt=0), name="historical_close_positive"),
+            models.CheckConstraint(condition=Q(close__gt=0), name="historical_close_positive"),
         ]
 
 
@@ -184,28 +184,29 @@ class TradingStrategy(models.Model):
         ordering = ("name", "id")
         constraints = [
             models.CheckConstraint(
-                check=Q(buy_drop_percent__gt=0) & Q(buy_drop_percent__lte=100),
+                condition=Q(buy_drop_percent__gt=0) & Q(buy_drop_percent__lte=100),
                 name="strategy_drop_percent_range",
             ),
             models.CheckConstraint(
-                check=Q(sell_profit_percent__gt=0), name="strategy_profit_positive"
+                condition=Q(sell_profit_percent__gt=0), name="strategy_profit_positive"
             ),
             models.CheckConstraint(
-                check=Q(lookback_days__gt=0), name="strategy_lookback_days_positive"
+                condition=Q(lookback_days__gt=0), name="strategy_lookback_days_positive"
             ),
             models.CheckConstraint(
-                check=Q(commission_percent__gte=0), name="strategy_commission_nonnegative"
+                condition=Q(commission_percent__gte=0), name="strategy_commission_nonnegative"
             ),
             models.CheckConstraint(
-                check=Q(initial_capital__gt=0), name="strategy_capital_positive"
+                condition=Q(initial_capital__gt=0), name="strategy_capital_positive"
             ),
         ]
 
 
 class StrategyRun(models.Model):
     strategy = models.ForeignKey(
-        TradingStrategy, on_delete=models.CASCADE, related_name="runs"
+        TradingStrategy, on_delete=models.PROTECT, related_name="runs"
     )
+    strategy_snapshot = models.JSONField(default=dict)
     start_date = models.DateField()
     end_date = models.DateField()
     initial_capital = models.DecimalField(max_digits=20, decimal_places=6)

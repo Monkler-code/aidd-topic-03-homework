@@ -1,9 +1,24 @@
 from decimal import Decimal
 
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
-from dashboard.models import PriceAlert
+from dashboard.models import PriceAlert, WatchlistItem
+
+
+def delete_alerts_without_watchlist_membership(owner_id, share_ids):
+    """Delete this owner's alerts for shares no longer in any of their lists."""
+    if not share_ids:
+        return 0
+    remaining_memberships = WatchlistItem.objects.filter(
+        share_id=OuterRef("share_id"), watchlist__owner_id=owner_id
+    )
+    deleted_count, _ = (
+        PriceAlert.objects.filter(owner_id=owner_id, share_id__in=share_ids)
+        .filter(~Exists(remaining_memberships))
+        .delete()
+    )
+    return deleted_count
 
 
 def trigger_alerts_for_share(share, current_price):

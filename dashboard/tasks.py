@@ -5,7 +5,7 @@ from redis import Redis
 from redis.exceptions import LockError
 
 from config.celery import app
-from config.settings import CELERY_BROKER_URL, CELERY_TASK_TIME_LIMIT, logger
+from config.settings import CELERY_TASK_TIME_LIMIT, TASK_LOCK_REDIS_URL, logger
 from dashboard.models import Share
 from dashboard.services.alerts import trigger_alerts_for_share
 from dashboard.services.history import sync_historical_prices
@@ -17,8 +17,16 @@ from dashboard.services.tbank import get_invest_client
 
 
 def _run_with_lock(name, callback):
+    if not TASK_LOCK_REDIS_URL:
+        logger.warning(
+            "No Redis URL configured for task lock %s; running without a lock", name
+        )
+        return callback()
+
     client = Redis.from_url(
-        CELERY_BROKER_URL, socket_connect_timeout=5, socket_timeout=5
+        TASK_LOCK_REDIS_URL,
+        socket_connect_timeout=5,
+        socket_timeout=5,
     )
     lock = client.lock(
         f"investing-demo:task:{name}", timeout=CELERY_TASK_TIME_LIMIT + 60
@@ -60,7 +68,10 @@ def _update_last_prices():
                 last_price, _price_time = quote
                 try:
                     is_trend_high = (
-                        share.last_price is None or last_price > share.last_price
+                        last_price > share.last_price
+                        if share.last_price is not None
+                        and last_price != share.last_price
+                        else None
                     )
 
                     Share.objects.filter(id=share.id).update(

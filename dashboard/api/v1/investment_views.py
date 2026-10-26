@@ -1,4 +1,5 @@
-from django.db import IntegrityError, transaction
+from django.db import DataError, IntegrityError, transaction
+from django.db.models.deletion import ProtectedError
 from django.shortcuts import get_object_or_404
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
@@ -12,6 +13,7 @@ from dashboard.api.v1.investment_serializers import (
     PortfolioSerializer,
     PriceAlertSerializer,
     StrategyRunInputSerializer,
+    StrategyRunListSerializer,
     StrategyRunSerializer,
     TradingStrategySerializer,
     TransactionSerializer,
@@ -26,7 +28,10 @@ from dashboard.models import (
     Transaction,
     Watchlist,
 )
-from dashboard.services.alerts import reset_alert
+from dashboard.services.alerts import (
+    delete_alerts_without_watchlist_membership,
+    reset_alert,
+)
 from dashboard.services.backtesting import run_backtest
 from dashboard.services.history import PERIOD_DAYS, prices_for_period, summarize_prices
 from dashboard.services.portfolio import get_portfolio_summaries
@@ -64,6 +69,13 @@ class WatchlistViewSet(ConflictOnIntegrityViewSet):
         return Watchlist.objects.filter(owner=self.request.user).prefetch_related(
             "shares"
         )
+
+    def perform_destroy(self, instance):
+        with transaction.atomic():
+            share_ids = list(instance.items.values_list("share_id", flat=True))
+            owner_id = instance.owner_id
+            instance.delete()
+            delete_alerts_without_watchlist_membership(owner_id, share_ids)
 
 
 class PriceAlertViewSet(ConflictOnIntegrityViewSet):
@@ -166,6 +178,21 @@ class TradingStrategyViewSet(OwnerModelViewSet):
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
+    def destroy(self, request, *args, **kwargs):
+        strategy = self.get_object()
+        try:
+            self.perform_destroy(strategy)
+        except ProtectedError:
+            return Response(
+                {
+                    "detail": (
+                        "Нельзя удалить стратегию, пока у нее есть сохраненные запуски."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     def get_throttles(self):
         throttles = super().get_throttles()
         if getattr(self, "action", None) == "run":
@@ -182,6 +209,15 @@ class TradingStrategyViewSet(OwnerModelViewSet):
             result = run_backtest(strategy, **input_serializer.validated_data)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except (DataError, OverflowError):
+            return Response(
+                {
+                    "detail": (
+                        "Результаты симуляции превышают допустимый диапазон хранения."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         return Response(
             StrategyRunSerializer(result).data, status=status.HTTP_201_CREATED
         )
@@ -191,7 +227,13 @@ class StrategyRunViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = StrategyRunSerializer
     permission_classes = (permissions.IsAuthenticated,)
 
+    def get_serializer_class(self):
+        if self.action == "list":
+            return StrategyRunListSerializer
+        return super().get_serializer_class()
+
     def get_queryset(self):
-        return StrategyRun.objects.filter(
-            strategy__owner=self.request.user
-        ).prefetch_related("trades")
+        queryset = StrategyRun.objects.filter(strategy__owner=self.request.user)
+        if self.action != "list":
+            queryset = queryset.prefetch_related("trades")
+        return queryset

@@ -2,6 +2,7 @@ from django.contrib import messages
 from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.generic import View
 
 from .forms import AuthForm, RegistrationForm
@@ -27,7 +28,11 @@ class AuthView(View):
 
     @staticmethod
     def get(request):
-        return render(request, "user/auth.html", {"form": AuthForm})
+        return render(
+            request,
+            "user/auth.html",
+            {"form": AuthForm(), "next": request.GET.get("next", "")},
+        )
 
     @staticmethod
     def post(request):
@@ -35,9 +40,12 @@ class AuthView(View):
         if rate_limit_response:
             return rate_limit_response
 
+        next_url = request.POST.get("next") or request.GET.get("next", "")
         form = AuthForm(request.POST)
         if not form.is_valid():
-            return render(request, "user/auth.html", {"form": form})
+            return render(
+                request, "user/auth.html", {"form": form, "next": next_url}
+            )
 
         email = form.cleaned_data["email"].strip().lower()
         password = form.cleaned_data["password"]
@@ -52,8 +60,21 @@ class AuthView(View):
                 )
 
         if user is not None:
+            try:
+                clear_attempts(request, "login")
+            except RateLimitUnavailable:
+                return HttpResponse(
+                    "Сервис авторизации временно недоступен. Попробуйте позже.",
+                    status=503,
+                    headers={"Retry-After": "60"},
+                )
             login(request, user)
-            clear_attempts(request, "login")
+            if url_has_allowed_host_and_scheme(
+                next_url,
+                allowed_hosts={request.get_host()},
+                require_https=request.is_secure(),
+            ):
+                return redirect(next_url)
             return redirect("dashboard:index")
         return render(
             request,
@@ -61,6 +82,7 @@ class AuthView(View):
             {
                 "form": form,
                 "error": "Неверный логин или пароль! Повторите попытку.",
+                "next": next_url,
             },
         )
 
@@ -70,7 +92,7 @@ class RegistrationView(View):
 
     @staticmethod
     def get(request):
-        return render(request, "user/registration.html", {"form": RegistrationForm})
+        return render(request, "user/registration.html", {"form": RegistrationForm()})
 
     @staticmethod
     def post(request):

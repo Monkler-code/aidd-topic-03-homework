@@ -20,13 +20,48 @@
             <div class="col-auto"><label class="form-label" for="end-{{ strategy.id }}">По</label><input class="form-control" type="date" id="end-{{ strategy.id }}" name="end_date" required></div>
             <div class="col-auto align-self-end"><button class="btn btn-outline-primary" type="submit">Запустить бэктест</button></div>
         </form>
-        {% for run in strategy.runs.all %}
+        {% for run in strategy.run_page %}
             <h3 class="h6 mt-3">Прогон {{ run.start_date }} — {{ run.end_date }}</h3>
+            {% if run.strategy_snapshot %}
+                <p class="text-muted small">Настройки прогона: {{ run.strategy_snapshot.strategy_name }} — {{ run.strategy_snapshot.share.ticker }}; падение {{ run.strategy_snapshot.buy_drop_percent }}% за {{ run.strategy_snapshot.lookback_days }} дней; цель прибыли {{ run.strategy_snapshot.sell_profit_percent }}%; комиссия {{ run.strategy_snapshot.commission_percent }}%; начальный капитал {{ run.strategy_snapshot.initial_capital }}.</p>
+            {% else %}
+                <p class="text-muted small">Настройки этого старого прогона недоступны.</p>
+            {% endif %}
             <p class="{% if run.return_percent >= 0 %}text-success{% else %}text-danger{% endif %}">Доходность {{ run.return_percent|floatformat:2 }}%, просадка {{ run.max_drawdown_percent|floatformat:2 }}%, прибыльных сделок: {{ run.winning_trades }}, убыточных: {{ run.losing_trades }}. Конечный капитал: {{ run.final_equity }}.</p>
-            <details><summary>Сделки ({{ run.trades.count }})</summary>
-                <ul>{% for trade in run.trades.all %}<li>{{ trade.executed_at }} — {{ trade.get_side_display }} {{ trade.quantity }} × {{ trade.price }}, комиссия {{ trade.commission }}, P&amp;L {{ trade.realized_pnl }}</li>{% endfor %}</ul>
-            </details>
+            {% if run.is_selected %}
+                <details open><summary>Сделки ({{ run.trade_count }})</summary>
+                    <ul>{% for trade in run.selected_trades %}<li>{{ trade.executed_at }} — {{ trade.get_side_display }} {{ trade.quantity }} × {{ trade.price }}, комиссия {{ trade.commission }}, P&amp;L {{ trade.realized_pnl }}</li>{% empty %}<li>Сделок нет.</li>{% endfor %}</ul>
+                </details>
+            {% elif run.trade_count %}
+                <a href="?{{ run.trades_query }}">Показать сделки ({{ run.trade_count }})</a>
+            {% else %}<p>Сделок нет.</p>{% endif %}
         {% empty %}<p>Прогонов пока нет.</p>{% endfor %}
+        {% if strategy.run_pages|length > 1 %}
+            <nav aria-label="Страницы прогонов">
+                <ul class="pagination pagination-sm mt-3 mb-0">
+                    {% for page in strategy.run_pages %}
+                        {% if page.ellipsis %}
+                            <li class="page-item disabled"><span class="page-link">…</span></li>
+                        {% else %}
+                            <li class="page-item{% if page.current %} active{% endif %}"><a class="page-link" href="?{{ page.query }}"{% if page.current %} aria-current="page"{% endif %}>{{ page.number }}</a></li>
+                        {% endif %}
+                    {% endfor %}
+                </ul>
+            </nav>
+        {% endif %}
     </div></section>
 {% empty %}<p>Стратегий пока нет.</p>{% endfor %}
+{% if strategy_pages|length > 1 %}
+    <nav aria-label="Страницы стратегий">
+        <ul class="pagination">
+            {% for page in strategy_pages %}
+                {% if page.ellipsis %}
+                    <li class="page-item disabled"><span class="page-link">…</span></li>
+                {% else %}
+                    <li class="page-item{% if page.current %} active{% endif %}"><a class="page-link" href="?{{ page.query }}"{% if page.current %} aria-current="page"{% endif %}>{{ page.number }}</a></li>
+                {% endif %}
+            {% endfor %}
+        </ul>
+    </nav>
+{% endif %}
 {% endblock %}

@@ -17,12 +17,14 @@ class RegistrationForm(forms.Form):
     )
     password1 = forms.CharField(
         required=True,
+        strip=False,
         widget=forms.PasswordInput(
             attrs={"class": "form-control my-3 p-4", "placeholder": "Пароль"}
         ),
     )
     password2 = forms.CharField(
         required=True,
+        strip=False,
         widget=forms.PasswordInput(
             attrs={"class": "form-control my-3 p-4", "placeholder": "Повторите пароль"}
         ),
@@ -68,6 +70,7 @@ class AuthForm(forms.Form):
     )
     password = forms.CharField(
         required=True,
+        strip=False,
         widget=forms.PasswordInput(
             attrs={"class": "form-control my-3 p-4", "placeholder": "Пароль"}
         ),

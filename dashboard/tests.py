@@ -320,9 +320,11 @@ class PriceUpdateTests(TestCase):
         )
         self.previous_update = self.share.updated_at
 
-    @patch("dashboard.tasks.get_last_data")
-    def test_task_updates_price_trend_and_timestamp(self, get_last_data):
-        get_last_data.return_value = (100.5, timezone.now())
+    @patch("dashboard.tasks.get_last_data_for_shares")
+    def test_task_updates_price_trend_and_timestamp(self, get_last_data_for_shares):
+        get_last_data_for_shares.return_value = {
+            self.share.pk: (100.5, timezone.now())
+        }
 
         from dashboard.tasks import update_last_price
 
@@ -340,10 +342,10 @@ class PriceUpdateTests(TestCase):
         self.assertGreaterEqual(self.share.updated_at, self.previous_update)
 
     @patch("dashboard.tasks.get_invest_client")
-    @patch("dashboard.tasks.get_last_data")
+    @patch("dashboard.tasks.get_last_data_for_shares")
     @patch("dashboard.tasks.Redis.from_url")
     def test_task_skips_when_another_update_holds_the_lock(
-        self, redis_from_url, get_last_data, get_invest_client
+        self, redis_from_url, get_last_data_for_shares, get_invest_client
     ):
         redis_from_url.return_value.lock.return_value.acquire.return_value = False
 
@@ -352,7 +354,7 @@ class PriceUpdateTests(TestCase):
         update_last_price()
 
         get_invest_client.assert_not_called()
-        get_last_data.assert_not_called()
+        get_last_data_for_shares.assert_not_called()
 
     def test_quotation_conversion_preserves_fractional_units(self):
         from dashboard.services.tbank import quotation_to_decimal, quotation_to_float
