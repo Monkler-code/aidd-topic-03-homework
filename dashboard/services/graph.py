@@ -7,7 +7,7 @@ from plotly.offline import plot
 from tinkoff.invest import CandleInterval, Client
 from tinkoff.invest.utils import now
 
-from config.settings import TINKOFF_TOKEN
+from config.settings import TINKOFF_TOKEN, logger
 
 
 def get_graph(share):
@@ -31,7 +31,7 @@ def get_graph(share):
                 x_data.append(candle.time.date())
                 y_data.append(candle.close.units)
         except Exception as exc:
-            # Return empty chart on API failure
+            logger.warning("Failed to fetch candles for share %s (figi=%s): %s", share.name, share.figi, exc)
             x_data = []
             y_data = []
 

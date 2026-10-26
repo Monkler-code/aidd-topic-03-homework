@@ -153,12 +153,22 @@ class PriceHistoryService:
                     if candles:
                         candle = candles[-1]
                         today = date.today()
+                        # Use actual OHLC values from the candle; fall back to close if unavailable
+                        open_price = (
+                            candle.open.units if hasattr(candle, "open") and candle.open else candle.close.units
+                        )
+                        high = (
+                            candle.wick_up.units if hasattr(candle, "wick_up") and candle.wick_up else candle.close.units
+                        )
+                        low = (
+                            candle.wick_down.units if hasattr(candle, "wick_down") and candle.wick_down else candle.close.units
+                        )
                         PriceHistoryService.save_historical_price(
                             share=share,
                             price_date=today,
-                            open_price=candle.close.units * 0.99,  # Approximate
-                            high=candle.close.units * 1.02,
-                            low=candle.close.units * 0.98,
+                            open_price=open_price,
+                            high=high,
+                            low=low,
                             close=candle.close.units,
                         )
                         collected += 1

@@ -6,22 +6,46 @@ import logging
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 import django
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# SECURITY WARNING: keep the secret key used in production secret!
-# For development, generate a key with: python manage.py shell
-#   from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())
-SECRET_KEY = os.environ.get(
-    "DJANGO_SECRET_KEY",
-    "django-insecure-dev-key-change-in-production-1234567890abcdef",
-)
-
+# ---------------------------------------------------------------------------
+# Core security settings — order matters: DEBUG must be defined before use
+# ---------------------------------------------------------------------------
 DEBUG = os.environ.get("DJANGO_DEBUG", "True").lower() in ("true", "1", "yes")
 
-ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
+_allowed_hosts = os.environ.get("DJANGO_ALLOWED_HOSTS")
+if _allowed_hosts is not None:
+    ALLOWED_HOSTS = _allowed_hosts.split(",")
+elif DEBUG:
+    ALLOWED_HOSTS = ["localhost", "127.0.0.1", "0.0.0.0"]
+else:
+    raise ImproperlyConfigured(
+        "The DJANGO_ALLOWED_HOSTS environment variable is required in production."
+    )
+
+# Secret key — must come after DEBUG is resolved
+_secret = os.environ.get("DJANGO_SECRET_KEY")
+if _secret is None:
+    if DEBUG:
+        from django.core.management.utils import get_random_secret_key
+
+        SECRET_KEY = get_random_secret_key()
+        logger.warning(
+            "Auto-generated SECRET_KEY — unsafe for production! "
+            "Set DJANGO_SECRET_KEY environment variable."
+        )
+    else:
+        raise ImproperlyConfigured(
+            "The DJANGO_SECRET_KEY environment variable is required. "
+            "Set it before running in production."
+        )
+else:
+    SECRET_KEY = _secret
 
 # Application definition
 INSTALLED_APPS = [
@@ -33,7 +57,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Third-party
     "crispy_forms",
-    "crispy_bootstrap3",
+    "crispy_bootstrap5",
     "rest_framework",
     "django_filters",
     # Local
@@ -41,8 +65,8 @@ INSTALLED_APPS = [
     "user",
 ]
 
-CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap3"
-CRISPY_TEMPLATE_PACK = "bootstrap3"
+CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
+CRISPY_TEMPLATE_PACK = "bootstrap5"
 
 # REST Framework configuration
 REST_FRAMEWORK = {
@@ -53,6 +77,14 @@ REST_FRAMEWORK = {
         "rest_framework.filters.OrderingFilter",
         "rest_framework.filters.SearchFilter",
     ],
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "100/hour",
+        "user": "1000/hour",
+    },
 }
 
 # Logging configuration

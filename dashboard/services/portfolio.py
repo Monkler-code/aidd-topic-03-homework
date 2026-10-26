@@ -135,10 +135,33 @@ class PortfolioCalculator:
             else 0.0
         )
 
-        # Calculate realized P&L from sell transactions
+        # Calculate realized P&L from sell transactions using FIFO
         realized_pnl = 0.0
-        for tx in portfolio.transactions.filter(transaction_type="SELL"):
-            realized_pnl += tx.total_amount - (tx.quantity * tx.share.last_price if tx.share.last_price else 0)
+        buy_transactions = list(
+            portfolio.transactions.filter(transaction_type="BUY").order_by("date")
+        )
+        buy_finger = 0
+        buy_qty_remaining = buy_transactions[buy_finger].quantity if buy_transactions else 0
+
+        for sell_tx in portfolio.transactions.filter(transaction_type="SELL").order_by("date"):
+            sell_qty = sell_tx.quantity
+            remaining_to_fill = sell_qty
+            sell_proceeds = sell_tx.total_amount
+
+            while remaining_to_fill > 0 and buy_finger < len(buy_transactions):
+                fill_qty = min(remaining_to_fill, buy_qty_remaining)
+                buy_avg_cost = buy_transactions[buy_finger].total_amount / buy_transactions[buy_finger].quantity
+                cost_for_fill = buy_avg_cost * fill_qty
+                realized_pnl += sell_proceeds * (fill_qty / sell_qty) - cost_for_fill
+                buy_qty_remaining -= fill_qty
+                if buy_qty_remaining <= 0:
+                    buy_finger += 1
+                    buy_qty_remaining = (
+                        buy_transactions[buy_finger].quantity
+                        if buy_finger < len(buy_transactions)
+                        else 0
+                    )
+                remaining_to_fill -= fill_qty
 
         return {
             "portfolio_id": portfolio.id,

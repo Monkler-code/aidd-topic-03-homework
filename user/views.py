@@ -17,14 +17,14 @@ class AuthView(View):
     @staticmethod
     def post(request):
         form = AuthForm(request.POST)
-        email = form.data.get("email", "").lower()
-        password = form.data.get("password", "")
+        if form.is_valid():
+            email = form.cleaned_data["email"].lower()
+            password = form.cleaned_data["password"]
+            user = authenticate(request, username=email, password=password)
 
-        user = authenticate(request, username=email, password=password)
-
-        if user is not None:
-            login(request, user)
-            return redirect("dashboard:index")
+            if user is not None:
+                login(request, user)
+                return redirect("dashboard:index")
 
         return render(
             request,

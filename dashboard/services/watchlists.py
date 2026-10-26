@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from django.db import transaction
+from datetime import datetime
+
+from django.db.models import Count
+from django.utils import timezone
 
 from dashboard.models import (
     PriceAlert,
@@ -36,8 +39,12 @@ class WatchlistService:
 
     @staticmethod
     def get_user_watchlists(user) -> list[Watchlist]:
-        """Get all watchlists for a user."""
-        return list(Watchlist.objects.filter(user=user).prefetch_related("items__share"))
+        """Get all watchlists for a user (with annotated item count)."""
+        return list(
+            Watchlist.objects.filter(user=user)
+            .prefetch_related("items__share")
+            .annotate(_item_count_annotation=Count("items"))
+        )
 
     @staticmethod
     def get_watchlist_with_prices(watchlist: Watchlist) -> dict:
@@ -114,25 +121,27 @@ class PriceAlertService:
 
     @staticmethod
     def trigger_alert(alert: PriceAlert) -> bool:
-        """Mark an alert as triggered (prevents duplicate notifications)."""
-        if alert.is_triggered:
-            return False
-        with transaction.atomic():
-            alert.refresh_from_db()
-            if alert.is_triggered:
-                return False
-            alert.is_triggered = True
-            alert.triggered_at = alert.triggered_at or __import__("datetime").datetime.now()
-            alert.save(update_fields=["is_triggered", "triggered_at"])
-        return True
+        """Mark an alert as triggered (atomic, race-condition safe)."""
+        updated = PriceAlert.objects.filter(
+            id=alert.id,
+            is_triggered=False,
+        ).update(
+            is_triggered=True,
+            triggered_at=timezone.now(),
+        )
+        return updated > 0
 
     @staticmethod
     def reset_alert(alert: PriceAlert) -> bool:
-        """Reset a triggered alert so it can trigger again."""
-        alert.is_triggered = False
-        alert.triggered_at = None
-        alert.save(update_fields=["is_triggered", "triggered_at"])
-        return True
+        """Reset a triggered alert so it can trigger again (atomic, race-condition safe)."""
+        updated = PriceAlert.objects.filter(
+            id=alert.id,
+            is_triggered=True,
+        ).update(
+            is_triggered=False,
+            triggered_at=None,
+        )
+        return updated > 0
 
     @staticmethod
     def delete_alert(alert: PriceAlert) -> bool:

@@ -13,11 +13,11 @@ app.autodiscover_tasks()
 app.conf.beat_schedule = {
     "update-last-price": {
         "task": "dashboard.tasks.update_last_price",
-        "schedule": 10.0,
+        "schedule": 60.0,  # Update prices every 60 seconds (Tinkoff API rate limit safe)
     },
     "check-price-alerts": {
         "task": "dashboard.new_tasks.check_all_price_alerts",
-        "schedule": 60.0,  # Check alerts every minute
+        "schedule": 120.0,  # Check alerts every 2 minutes
     },
     "collect-historical-prices": {
         "task": "dashboard.new_tasks.collect_historical_prices",

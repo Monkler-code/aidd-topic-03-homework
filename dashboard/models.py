@@ -1,6 +1,7 @@
 """All models for the Investing application."""
 
 from django.db import models
+from django.db.models import Count
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
@@ -17,7 +18,7 @@ class Share(models.Model):
     uid = models.CharField(max_length=255, unique=True, verbose_name="UID")
     last_price = models.FloatField(blank=True, null=True, verbose_name="Текущая цена")
     is_trend_high = models.BooleanField(
-        blank=True, null=True, verbose_name="Растет цена"
+        default=False, verbose_name="Растет цена"
     )
     updated_at = models.DateTimeField(auto_now=True, blank=True, null=True)
 
@@ -58,6 +59,9 @@ class Watchlist(models.Model):
         return f"{self.name} ({self.user.email})"
 
     def get_item_count(self) -> int:
+        """Return item count, using prefetched annotation if available."""
+        if hasattr(self, "_item_count_annotation"):
+            return self._item_count_annotation
         return self.items.count()
 
 

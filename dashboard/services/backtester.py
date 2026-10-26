@@ -16,12 +16,21 @@ from dashboard.models import (
 class StrategyBacktester:
     """Service for running backtests on trading strategies."""
 
-    def __init__(self, strategy: TradingStrategy):
+    INITIAL_CASH = 100000.0  # Default starting capital
+    DEFAULT_TRADE_SIZE = 10  # Default number of shares per trade
+
+    def __init__(
+        self,
+        strategy: TradingStrategy,
+        initial_cash: float | None = None,
+        trade_size: int | None = None,
+    ):
         self.strategy = strategy
         self.rules = list(strategy.rules.order_by("priority"))
         self.trades: list[StrategyTrade] = []
-        self.virtual_cash = 100000.0  # Start with 100k virtual cash
+        self.virtual_cash = initial_cash if initial_cash is not None else self.INITIAL_CASH
         self.holdings: dict[str, int] = {}  # ticker -> quantity
+        self.trade_size = trade_size if trade_size is not None else self.DEFAULT_TRADE_SIZE
 
     def run_backtest(self, share: Share, days: int = 365) -> list[StrategyTrade]:
         """
@@ -44,6 +53,8 @@ class StrategyBacktester:
             data_list = data_list[-days:]
 
         # Simulate each day
+        prev_compare_values: dict[int, float] = {}  # rule id -> previous compare value
+
         for i, day_data in enumerate(data_list):
             current_price = day_data["close"]
             current_high = day_data["high"]
@@ -58,7 +69,20 @@ class StrategyBacktester:
 
             # Evaluate rules in priority order
             for rule in self.rules:
-                triggered = self._evaluate_rule(rule, current_price, current_high, current_low, change_pct)
+                prev_value = prev_compare_values.get(id(rule))
+                triggered = self._evaluate_rule(
+                    rule, current_price, current_high, current_low, change_pct, prev_value
+                )
+                # Store current compare value for next iteration
+                field = rule.condition_field
+                if field == "close":
+                    prev_compare_values[id(rule)] = current_price
+                elif field == "high":
+                    prev_compare_values[id(rule)] = current_high
+                elif field == "low":
+                    prev_compare_values[id(rule)] = current_low
+                elif field == "change_pct":
+                    prev_compare_values[id(rule)] = change_pct
 
                 if triggered:
                     self._execute_trade(rule, share, current_price, day_data["date"])
@@ -79,6 +103,7 @@ class StrategyBacktester:
         current_high: float,
         current_low: float,
         change_pct: float,
+        prev_compare_value: float | None = None,
     ) -> bool:
         """Evaluate a single rule against current market data."""
         field = rule.condition_field
@@ -107,11 +132,15 @@ class StrategyBacktester:
         elif operator == "lte":
             return compare_value <= value
         elif operator == "cross_up":
-            # Price crossed above value (previous < value, current >= value)
-            return False  # Simplified
+            # Price crossed above value: previous < value, current >= value
+            if prev_compare_value is None:
+                return False
+            return prev_compare_value < value <= compare_value
         elif operator == "cross_down":
-            # Price crossed below value (previous > value, current <= value)
-            return False  # Simplified
+            # Price crossed below value: previous > value, current <= value
+            if prev_compare_value is None:
+                return False
+            return prev_compare_value > value >= compare_value
 
         return False
 
@@ -123,7 +152,7 @@ class StrategyBacktester:
         trade_date: datetime,
     ):
         """Execute a simulated trade based on a triggered rule."""
-        quantity = 10  # Default trade size
+        quantity = self.trade_size
 
         trade = StrategyTrade.objects.create(
             strategy=self.strategy,
@@ -165,8 +194,11 @@ class StrategyBacktester:
             trade.save()
 
     @staticmethod
-    def calculate_metrics(trades: list[StrategyTrade], virtual_cash: float) -> dict:
-        """Calculate performance metrics for a backtest."""
+    def calculate_metrics(trades: list[StrategyTrade], virtual_cash: float, initial_cash: float | None = None) -> dict:
+        """Calculate performance metrics for a backtest using proper FIFO."""
+        if initial_cash is None:
+            initial_cash = StrategyBacktester.INITIAL_CASH
+
         if not trades:
             return {
                 "total_trades": 0,
@@ -182,18 +214,35 @@ class StrategyBacktester:
         buy_trades = [t for t in trades if t.action == "BUY"]
         sell_trades = [t for t in trades if t.action == "SELL"]
 
-        # Calculate P&L for sell trades
+        # Calculate P&L for sell trades using proper FIFO per share
         profits = []
         for sell_tx in sell_trades:
-            # Find matching buy trades (FIFO)
-            buy_txs = [
-                b for b in buy_trades
+            # Get available buy trades for this share (FIFO order)
+            available_buys = [
+                {"price": b.price, "qty": b.quantity}
+                for b in buy_trades
                 if b.share_id == sell_tx.share_id and b.date <= sell_tx.date
             ]
-            if buy_txs:
-                avg_buy_price = sum(b.price for b in buy_txs[:sell_tx.quantity]) / min(sell_tx.quantity, len(buy_txs))
-                pnl = (sell_tx.price - avg_buy_price) * sell_tx.quantity
-                profits.append(pnl)
+
+            sell_qty = sell_tx.quantity
+            cost_for_sell = 0.0
+            remaining = sell_qty
+
+            for buy in available_buys:
+                if remaining <= 0:
+                    break
+                fill_qty = min(remaining, buy["qty"])
+                cost_for_sell += buy["price"] * fill_qty
+                buy["qty"] -= fill_qty
+                remaining -= fill_qty
+
+            if remaining > 0:
+                # Not enough buys to cover this sell — skip
+                continue
+
+            sell_proceeds = sell_tx.price * sell_qty
+            pnl = sell_proceeds - cost_for_sell
+            profits.append(pnl)
 
         winning = sum(1 for p in profits if p > 0)
         losing = sum(1 for p in profits if p < 0)
@@ -201,7 +250,6 @@ class StrategyBacktester:
 
         # Calculate total return
         total_profit = sum(profits)
-        initial_cash = 100000.0
         total_return_pct = round(((virtual_cash + total_profit) / initial_cash - 1) * 100, 2)
 
         # Calculate max drawdown (simplified)

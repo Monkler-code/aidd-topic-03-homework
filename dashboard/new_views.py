@@ -1,7 +1,7 @@
 """Views for new investment modules."""
 
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.views.generic import (
     CreateView,
@@ -115,9 +115,11 @@ class PriceAlertCreateView(LoginRequiredMixin, View):
         share_id = request.POST.get("share_id")
         alert_type = request.POST.get("alert_type")
         target_price = request.POST.get("target_price")
+        watchlist_pk = request.POST.get("watchlist_pk")
 
-        if not all([watchlist_item_id, share_id, alert_type, target_price]):
-            return redirect("dashboard:watchlist-detail", pk=request.POST.get("watchlist_pk"))
+        if not all([watchlist_item_id, share_id, alert_type, target_price, watchlist_pk]):
+            request.session["alert_error"] = "Заполните все поля"
+            return redirect("dashboard:watchlist-detail", pk=watchlist_pk)
 
         try:
             watchlist_item = WatchlistItem.objects.get(
@@ -125,16 +127,21 @@ class PriceAlertCreateView(LoginRequiredMixin, View):
                 watchlist__user=request.user,
             )
             share = Share.objects.get(id=share_id)
+            # Validate share matches watchlist_item
+            if watchlist_item.share_id != share.id:
+                request.session["alert_error"] = "Акция не соответствует элементу списка"
+                return redirect("dashboard:watchlist-detail", pk=watchlist_pk)
             PriceAlertService.create_alert(
                 watchlist_item=watchlist_item,
                 share=share,
                 alert_type=alert_type,
                 target_price=float(target_price),
             )
-        except (WatchlistItem.DoesNotExist, Share.DoesNotExist, ValueError):
-            pass
+        except (WatchlistItem.DoesNotExist, Share.DoesNotExist, ValueError, TypeError):
+            request.session["alert_error"] = "Ошибка при создании алерта"
+            return redirect("dashboard:watchlist-detail", pk=watchlist_pk)
 
-        return redirect("dashboard:watchlist-detail", pk=request.POST.get("watchlist_pk"))
+        return redirect("dashboard:watchlist-detail", pk=watchlist_pk)
 
 
 class PriceAlertResetView(LoginRequiredMixin, View):
@@ -226,6 +233,7 @@ class AddTransactionView(LoginRequiredMixin, View):
         commission = request.POST.get("commission", 0)
 
         if not all([share_id, transaction_type, quantity, price]):
+            request.session["transaction_error"] = "Заполните все обязательные поля"
             return redirect("dashboard:portfolio-detail", pk=portfolio.pk)
 
         try:
@@ -238,8 +246,9 @@ class AddTransactionView(LoginRequiredMixin, View):
                 price=float(price),
                 commission=float(commission),
             )
-        except (Share.DoesNotExist, ValueError):
-            pass
+        except (Share.DoesNotExist, ValueError, TypeError):
+            request.session["transaction_error"] = "Ошибка при добавлении операции"
+            return redirect("dashboard:portfolio-detail", pk=portfolio.pk)
 
         return redirect("dashboard:portfolio-detail", pk=portfolio.pk)
 
@@ -347,14 +356,19 @@ class AddRuleView(LoginRequiredMixin, View):
         priority = request.POST.get("priority", 0)
 
         if all([condition_field, condition_operator, condition_value, action]):
-            StrategyRule.objects.create(
-                strategy=strategy,
-                condition_field=condition_field,
-                condition_operator=condition_operator,
-                condition_value=float(condition_value),
-                action=action,
-                priority=int(priority),
-            )
+            try:
+                StrategyRule.objects.create(
+                    strategy=strategy,
+                    condition_field=condition_field,
+                    condition_operator=condition_operator,
+                    condition_value=float(condition_value),
+                    action=action,
+                    priority=int(priority),
+                )
+            except (ValueError, TypeError):
+                request.session["rule_error"] = "Некорректные числовые значения"
+        else:
+            request.session["rule_error"] = "Заполните все обязательные поля"
 
         return redirect("dashboard:strategy-detail", pk=strategy.pk)
 
@@ -362,10 +376,20 @@ class AddRuleView(LoginRequiredMixin, View):
 class RunBacktestView(LoginRequiredMixin, View):
     """Run a backtest for a strategy."""
 
+    MAX_BACKTEST_DAYS = 3650  # 10 years max
+
     def post(self, request, pk):
         strategy = get_object_or_404(TradingStrategy, pk=pk, user=request.user)
         share_id = request.POST.get("share_id")
-        days = int(request.POST.get("days", 365))
+        try:
+            days = int(request.POST.get("days", 365))
+        except (ValueError, TypeError):
+            days = 365
+
+        if days < 1:
+            days = 1
+        elif days > self.MAX_BACKTEST_DAYS:
+            days = self.MAX_BACKTEST_DAYS
 
         if not share_id:
             return redirect("dashboard:strategy-detail", pk=strategy.pk)

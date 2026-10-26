@@ -5,6 +5,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import UserRateThrottle
 
 from dashboard.models import (
     HistoricalPrice,
@@ -44,11 +45,18 @@ from .serializers import (
 )
 
 
+class _WriteThrottle(UserRateThrottle):
+    """Stricter throttle for write operations."""
+
+    rate = "200/hour"
+
+
 class WatchlistViewSet(viewsets.ModelViewSet):
     """API for managing watchlists."""
 
     serializer_class = WatchlistSerializer
     permission_classes = [IsAuthenticated]
+    throttle_classes = [_WriteThrottle]
 
     def get_queryset(self):
         return Watchlist.objects.filter(user=self.request.user).prefetch_related("items__share")
@@ -85,7 +93,12 @@ class WatchlistViewSet(viewsets.ModelViewSet):
         if not share_id:
             return Response({"error": "share_id is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        success = WatchlistService.remove_share_from_watchlist(watchlist, share_id)
+        try:
+            share = Share.objects.get(id=share_id)
+        except Share.DoesNotExist:
+            return Response({"error": "Share not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        success = WatchlistService.remove_share_from_watchlist(watchlist, share)
         if success:
             return Response({"message": "Share removed"})
         return Response({"error": "Item not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -103,6 +116,7 @@ class PriceAlertViewSet(viewsets.ModelViewSet):
 
     serializer_class = PriceAlertSerializer
     permission_classes = [IsAuthenticated]
+    throttle_classes = [_WriteThrottle]
 
     def get_queryset(self):
         return PriceAlert.objects.filter(
@@ -121,7 +135,17 @@ class PriceAlertViewSet(viewsets.ModelViewSet):
             )
             share = Share.objects.get(id=serializer.validated_data["share_id"])
         except (WatchlistItem.DoesNotExist, Share.DoesNotExist):
-            return Response({"error": "Watchlist item or share not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "Watchlist item or share not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Validate that share_id matches the watchlist_item's share
+        if watchlist_item.share_id != share.id:
+            return Response(
+                {"error": "Share does not belong to the specified watchlist item"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         alert = PriceAlertService.create_alert(
             watchlist_item=watchlist_item,
@@ -160,6 +184,7 @@ class PortfolioViewSet(viewsets.ModelViewSet):
 
     serializer_class = PortfolioSerializer
     permission_classes = [IsAuthenticated]
+    throttle_classes = [_WriteThrottle]
 
     def get_queryset(self):
         return Portfolio.objects.filter(user=self.request.user)
@@ -210,9 +235,7 @@ class HistoricalPriceViewSet(viewsets.ReadOnlyModelViewSet):
 
     serializer_class = HistoricalPriceSerializer
     permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        return HistoricalPrice.objects.all().order_by("-date")
+    throttle_classes = [UserRateThrottle]
 
     def get_queryset(self):
         queryset = HistoricalPrice.objects.all()
@@ -261,6 +284,7 @@ class TradingStrategyViewSet(viewsets.ModelViewSet):
 
     serializer_class = TradingStrategySerializer
     permission_classes = [IsAuthenticated]
+    throttle_classes = [_WriteThrottle]
 
     def get_queryset(self):
         return TradingStrategy.objects.filter(user=self.request.user)
@@ -298,7 +322,17 @@ class TradingStrategyViewSet(viewsets.ModelViewSet):
         """Run a backtest for a strategy."""
         strategy = self.get_object()
         share_id = request.data.get("share_id")
-        days = int(request.data.get("days", 365))
+        try:
+            days = int(request.data.get("days", 365))
+        except (ValueError, TypeError):
+            days = 365
+
+        MAX_DAYS = 3650
+        if days < 1 or days > MAX_DAYS:
+            return Response(
+                {"error": f"days must be between 1 and {MAX_DAYS}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         if not share_id:
             return Response({"error": "share_id is required"}, status=status.HTTP_400_BAD_REQUEST)
